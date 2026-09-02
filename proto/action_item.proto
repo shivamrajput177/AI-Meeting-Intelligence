@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+package meetingintel.actionitem.v1;
+
+option go_package = "github.com/shivamrajput177/ai-meeting-intelligence/proto/gen/actionitem;actionitempb";
+
+import "google/protobuf/timestamp.proto";
+import "common.proto";
+
+service ActionItemService {
+  rpc ListActionItems(ListActionItemsRequest) returns (ListActionItemsResponse);
+  rpc GetActionItem(GetActionItemRequest) returns (ActionItem);
+  rpc UpdateActionItemStatus(UpdateActionItemStatusRequest) returns (ActionItem);
+  rpc ReassignOwner(ReassignOwnerRequest) returns (ActionItem);
+  rpc CreateJiraTicketForItem(GetActionItemRequest) returns (CreateJiraTicketResponse);
+}
+
+message ActionItem {
+  string id = 1;
+  string meeting_id = 2;
+  string org_id = 3;
+  string description = 4;
+  meetingintel.common.v1.ActionItemType type = 5;
+  string owner_user_id = 6;
+  string owner_raw_name = 7;
+  string due_date = 8; // ISO 8601 date
+  meetingintel.common.v1.ActionItemStatus status = 9;
+  string priority = 10;
+  string jira_issue_key = 11;
+  float confidence = 12;
+  google.protobuf.Timestamp created_at = 13;
+}
+
+message ListActionItemsRequest {
+  meetingintel.common.v1.RequestContext ctx = 1;
+  string meeting_id = 2; // optional filter
+  string owner_user_id = 3; // optional filter
+  meetingintel.common.v1.ActionItemStatus status_filter = 4;
+  meetingintel.common.v1.PageRequest page = 5;
+}
+
+message ListActionItemsResponse {
+  repeated ActionItem items = 1;
+  meetingintel.common.v1.PageResponse page = 2;
+}
+
+message GetActionItemRequest {
+  meetingintel.common.v1.RequestContext ctx = 1;
+  string action_item_id = 2;
+}
+
+message UpdateActionItemStatusRequest {
+  meetingintel.common.v1.RequestContext ctx = 1;
+  string action_item_id = 2;
+  meetingintel.common.v1.ActionItemStatus status = 3;
+}
+
+message ReassignOwnerRequest {
+  meetingintel.common.v1.RequestContext ctx = 1;
+  string action_item_id = 2;
+  string new_owner_user_id = 3;
+}
+
+message CreateJiraTicketResponse {
+  bool requested = 1;
+}
+
+// --- Kafka payloads ---
+
+message ActionItemExtractedEvent {
+  string meeting_id = 1;
+  string org_id = 2;
+  repeated ActionItem items = 3;
+}
+
+message ActionItemStatusChangedEvent {
+  string action_item_id = 1;
+  string org_id = 2;
+  meetingintel.common.v1.ActionItemStatus old_status = 3;
+  meetingintel.common.v1.ActionItemStatus new_status = 4;
+}
+
+message ActionItemJiraRequestedEvent {
+  string action_item_id = 1;
+  string org_id = 2;
+  string requested_by_user_id = 3;
+}

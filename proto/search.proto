@@ -1,0 +1,85 @@
+syntax = "proto3";
+
+package meetingintel.search.v1;
+
+option go_package = "github.com/shivamrajput177/ai-meeting-intelligence/proto/gen/search;searchpb";
+
+import "google/protobuf/timestamp.proto";
+import "common.proto";
+
+service SearchService {
+  rpc SemanticSearch(SemanticSearchRequest) returns (SemanticSearchResponse);
+  rpc FindSimilarMeetings(FindSimilarMeetingsRequest) returns (FindSimilarMeetingsResponse);
+  rpc AskQuestion(AskQuestionRequest) returns (AskQuestionResponse);
+  rpc Reindex(ReindexRequest) returns (ReindexResponse);
+}
+
+message SemanticSearchRequest {
+  meetingintel.common.v1.RequestContext ctx = 1;
+  string query = 2;
+  int32 top_k = 3;
+}
+
+message SearchResult {
+  string chunk_id = 1;
+  string meeting_id = 2;
+  string meeting_title = 3;
+  string text_snippet = 4;
+  int32 start_ms = 5;
+  float score = 6;
+}
+
+message SemanticSearchResponse {
+  repeated SearchResult results = 1;
+}
+
+message FindSimilarMeetingsRequest {
+  meetingintel.common.v1.RequestContext ctx = 1;
+  string meeting_id = 2;
+  int32 top_k = 3;
+}
+
+message SimilarMeeting {
+  string meeting_id = 1;
+  string title = 2;
+  float score = 3;
+}
+
+message FindSimilarMeetingsResponse {
+  repeated SimilarMeeting meetings = 1;
+}
+
+message AskQuestionRequest {
+  meetingintel.common.v1.RequestContext ctx = 1;
+  string question = 2;
+}
+
+message Citation {
+  string meeting_id = 1;
+  string meeting_title = 2;
+  int32 timestamp_ms = 3;
+  string chunk_id = 4;
+}
+
+message AskQuestionResponse {
+  string answer = 1;
+  repeated Citation citations = 2;
+}
+
+message ReindexRequest {
+  meetingintel.common.v1.RequestContext ctx = 1;
+  string meeting_id = 2; // empty = full org reindex (admin only)
+}
+
+message ReindexResponse {
+  int32 chunks_reindexed = 1;
+}
+
+// --- Kafka payloads ---
+
+message EmbeddingCompletedEvent {
+  string meeting_id = 1;
+  string org_id = 2;
+  int32 chunk_count = 3;
+  google.protobuf.Timestamp completed_at = 4;
+}
