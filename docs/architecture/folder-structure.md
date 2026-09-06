@@ -3,17 +3,19 @@
 Single repo: a `go.work` workspace for the backend (one `cmd/` entrypoint per
 microservice, shared code under `internal/platform` and `pkg/`), plus a
 `web/` directory for the frontend. Rationale for one repo: it keeps the
-`.proto`-derived contracts, migrations, Helm charts, and the UI that
-consumes the REST API co-located and atomically reviewable in one PR, while
-`internal/<service>` boundaries keep the backend services independently
-deployable and (if ever needed) extractable into separate repos with
-minimal churn.
+REST API contracts, migrations, Helm charts, and the UI that consumes the
+API co-located and atomically reviewable in one PR, while `internal/<service>`
+boundaries keep the backend services independently deployable and (if ever
+needed) extractable into separate repos with minimal churn. There's no
+`.proto`/codegen step anywhere — every API, external and internal, is
+plain hand-written REST/JSON (see `microservices.md` §"Internal
+Communication").
 
 ```
 .
 ├── go.work
 ├── go.work.sum
-├── Makefile                          # make proto, make lint, make test, make up (docker compose), make kind-up
+├── Makefile                          # make lint, make test, make up (docker compose), make kind-up
 ├── docker-compose.yaml               # local dev: postgres, redis, kafka, minio, ollama, whisper.cpp
 ├── cmd/
 │   ├── api-gateway/{main.go,go.mod,Dockerfile}
@@ -36,11 +38,10 @@ minimal churn.
 │   │   ├── metrics/                  # prometheus registry helpers
 │   │   ├── db/                       # pgx pool, migration runner, RLS tenant-context helper
 │   │   ├── kafka/                    # producer/consumer wrappers, DLQ helper, trace header propagation
-│   │   ├── grpcserver/               # server bootstrap, auth/tenant interceptors, health/reflection
-│   │   ├── grpcclient/               # client dial helpers, retry/circuit-breaker interceptors
-│   │   ├── httpserver/               # Fiber bootstrap, middleware chain
+│   │   ├── httpserver/               # Fiber bootstrap, middleware chain (auth, tenant context, rate limit, logging) — used by every service, not just the gateway
+│   │   ├── httpclient/               # shared client for calling another service's REST API: timeouts, retries, circuit breaker, trace-header propagation
 │   │   ├── redis/                    # client wrapper, rate limiter, cache helpers
-│   │   └── errors/                   # typed app errors -> gRPC status / HTTP code mapping
+│   │   └── errors/                   # typed app errors -> HTTP status code mapping
 │   │
 │   ├── authsvc/            (domain/usecase/repository/delivery)
 │   ├── usersvc/            (domain/usecase/repository/delivery)
@@ -52,27 +53,12 @@ minimal churn.
 │   ├── searchsvc/           (domain/usecase/repository/delivery, + ollama client, embeddings, rag)
 │   ├── notificationsvc/     (domain/usecase/repository/delivery, + slack/email/jira clients, scheduler)
 │   ├── analyticssvc/        (domain/usecase/repository/delivery, + rollup)
-│   └── routes/              (delivery/http only — the API Gateway's route handlers + REST-to-gRPC translation, no domain/usecase of its own)
+│   └── routes/              (delivery/http only — the API Gateway's route handlers, reverse-proxying REST to each service; no domain/usecase of its own)
 │
 ├── pkg/                              # importable outside this repo if ever needed
 │   ├── jwtutil/
 │   ├── validator/
 │   └── apierrors/
-│
-├── proto/
-│   ├── common.proto
-│   ├── auth.proto
-│   ├── user.proto
-│   ├── organization.proto
-│   ├── meeting.proto
-│   ├── transcription.proto
-│   ├── ai_summary.proto
-│   ├── action_item.proto
-│   ├── search.proto
-│   ├── notification.proto
-│   ├── analytics.proto
-│   ├── buf.yaml / buf.gen.yaml       # buf for lint + codegen (Go stubs only — see api-spec.md for why no OpenAPI codegen)
-│   └── gen/                          # generated Go stubs (checked in or gitignored + `make proto`)
 │
 ├── migrations/
 │   ├── auth/0001_init.up.sql ...
@@ -109,8 +95,7 @@ minimal churn.
 ├── .github/workflows/
 │   ├── ci.yaml                       # backend
 │   ├── web-ci.yaml                   # frontend: lint/typecheck/build
-│   ├── security.yaml
-│   └── proto-lint.yaml
+│   └── security.yaml
 │
 ├── docs/
 │   ├── PROJECT_PLAN.md
@@ -123,7 +108,7 @@ minimal churn.
 │   └── pull-ollama-models.sh
 │
 └── test/
-    ├── integration/                  # spins docker-compose, hits real gRPC endpoints
+    ├── integration/                  # spins docker-compose, hits real REST endpoints
     └── e2e/                          # Playwright, drives web/ against a running stack end-to-end
 ```
 
@@ -157,8 +142,7 @@ internal/<service>/
 │   └── redis/              #   cache-backed implementation, where used
 │
 └── delivery/                # transport adapters — translate the outside world into usecase calls
-    ├── grpc/                #   gRPC server implementing the service's .proto contract
-    ├── http/                #   REST handlers, only present where a service is called directly (mostly just the gateway)
+    ├── http/                #   this service's own REST API (its handlers implement the routes documented for it in api-spec.md/microservices.md) — every service has one, since internal callers use the same REST transport as external clients
     └── kafka/                #   consumer + producer adapters (publish/subscribe wrappers around usecase calls)
 ```
 

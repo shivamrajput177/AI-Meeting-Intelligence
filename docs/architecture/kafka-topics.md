@@ -2,9 +2,12 @@
 
 Cluster: 3-broker KRaft (locally can run as 1 broker/1 controller combined
 process to save RAM; document RF=3 for production). Deployed via the
-**Strimzi** operator on Kubernetes. Message payloads are **Protobuf**,
-generated from the same `.proto` files that define the gRPC contracts (see
-`proto/`) — one schema, two transports.
+**Strimzi** operator on Kubernetes. Message payloads are **plain JSON**,
+hand-defined per topic (documented below) — no protobuf, no schema
+registry. Each consumer unmarshals into its own Go struct for that topic;
+adding a field is additive and backward-compatible as long as consumers
+ignore unknown fields, which is the same discipline a schema registry
+would enforce, just without the extra moving part.
 
 ## Naming & conventions
 
@@ -71,12 +74,12 @@ sequenceDiagram
     participant NO as Notification Svc
 
     U->>GW: POST /meetings (init upload)
-    GW->>MS: CreateMeetingUploadIntent
+    GW->>MS: POST /meetings (proxied)
     MS->>MinIO: presign PUT URL
     MS-->>U: {uploadUrl, meetingId}
     U->>MinIO: PUT recording bytes
     U->>GW: POST /meetings/{id}/complete-upload
-    GW->>MS: ConfirmUpload
+    GW->>MS: POST /meetings/{id}/complete-upload (proxied)
     MS->>K: meeting.uploaded.v1
     MS-->>U: 202 Accepted {status: uploaded}
 
@@ -114,7 +117,7 @@ sequenceDiagram
     participant PG as Postgres (pgvector, RLS by org)
 
     U->>GW: POST /qa/ask {question}
-    GW->>SE: AskQuestion(orgId, question)
+    GW->>SE: POST /qa/ask (proxied, orgId from JWT)
     SE->>OL: embed(question)
     OL-->>SE: query_vector
     SE->>PG: SET LOCAL app.current_org; SELECT ... ORDER BY embedding <=> query_vector LIMIT k
@@ -138,7 +141,7 @@ sequenceDiagram
     participant J as Jira API
 
     U->>GW: POST /action-items/{id}/jira-ticket
-    GW->>AC: CreateJiraTicketForItem
+    GW->>AC: POST /action-items/{id}/jira-ticket (proxied)
     AC->>K: action-item.jira-requested.v1
     AC-->>U: 202 Accepted
 
@@ -148,7 +151,7 @@ sequenceDiagram
     J-->>NO: {issueKey}
     NO->>NO: notification.jira_links upsert
     NO->>K: notification.sent.v1
-    NO->>AC: (gRPC callback or event) action item jira_issue_key updated
+    NO->>AC: PATCH /action-items/{id} (internal REST call) sets jira_issue_key
 ```
 
 ### 4. Reminder scheduler

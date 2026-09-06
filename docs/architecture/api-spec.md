@@ -3,12 +3,14 @@
 Base URL: `/api/v1`. Auth: `Authorization: Bearer <JWT>` unless noted public.
 All responses `application/json`; errors follow
 `{"error": {"code": "string", "message": "string", "requestId": "uuid"}}`.
-The REST API is **hand-written**, not generated from the `.proto` files —
-the gateway's HTTP handlers are ordinary Go code that call the internal
-gRPC services and shape the JSON response themselves. `openapi.yaml` is
-maintained by hand alongside this doc as documentation/tooling (Swagger UI,
-client codegen for the frontend), not as the source of truth for the API's
-behavior; the Go handler code is the source of truth.
+The REST API is **entirely hand-written** — no protobuf, no codegen. The
+gateway's HTTP handlers are ordinary Go code that reverse-proxy to each
+internal service's own REST API (also plain HTTP/JSON — see
+`microservices.md` §"Internal Communication"; there's no gRPC anywhere in
+this design). `openapi.yaml` is maintained by hand alongside this doc as
+documentation/tooling (Swagger UI, client codegen for the frontend), not as
+the source of truth for the API's behavior; the Go handler code is the
+source of truth.
 
 ## Auth
 

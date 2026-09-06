@@ -10,11 +10,10 @@ path to a real cloud/K8s cluster.
 
 | Doc | Contents |
 |---|---|
-| [`architecture/microservices.md`](architecture/microservices.md) | LLD for all 11 services: responsibilities, REST/gRPC APIs, DB schema, Kafka topics, scaling |
+| [`architecture/microservices.md`](architecture/microservices.md) | LLD for all 11 services: responsibilities, REST APIs, DB schema, Kafka topics, scaling |
 | [`architecture/database-schema.md`](architecture/database-schema.md) | Full multi-tenant PostgreSQL + pgvector DDL |
 | [`architecture/kafka-topics.md`](architecture/kafka-topics.md) | Topic catalog, partitioning/keying, retention, event-flow sequence diagrams |
-| [`architecture/api-spec.md`](architecture/api-spec.md) | External REST API specification |
-| [`proto/`](../proto/) | gRPC contracts (source of truth for internal + Kafka payload schemas) |
+| [`architecture/api-spec.md`](architecture/api-spec.md) | REST API specification — external and internal calls are the same contract, documented once, no separate gRPC layer |
 | [`architecture/kubernetes-cicd.md`](architecture/kubernetes-cicd.md) | K8s deployment strategy, Helm chart layout, GitHub Actions, ArgoCD GitOps |
 | [`architecture/observability-security.md`](architecture/observability-security.md) | Metrics/logs/traces, security architecture, multi-tenancy, DR, cost optimization |
 | [`architecture/folder-structure.md`](architecture/folder-structure.md) | Go monorepo layout |
@@ -52,14 +51,14 @@ flowchart TB
     WEB -->|REST/HTTPS| GW[API Gateway]
 
     subgraph "Kubernetes Cluster (Kind)"
-        GW -->|gRPC| AUTH[Auth Service]
-        GW -->|gRPC| USER[User Service]
-        GW -->|gRPC| ORG[Organization Service]
-        GW -->|gRPC| MEET[Meeting Service]
-        GW -->|gRPC| SEARCH[Search Service]
-        GW -->|gRPC| AI[AI Summary Service]
-        GW -->|gRPC| ACT[Action Item Service]
-        GW -->|gRPC| ANL[Analytics Service]
+        GW -->|REST/JSON| AUTH[Auth Service]
+        GW -->|REST/JSON| USER[User Service]
+        GW -->|REST/JSON| ORG[Organization Service]
+        GW -->|REST/JSON| MEET[Meeting Service]
+        GW -->|REST/JSON| SEARCH[Search Service]
+        GW -->|REST/JSON| AI[AI Summary Service]
+        GW -->|REST/JSON| ACT[Action Item Service]
+        GW -->|REST/JSON| ANL[Analytics Service]
 
         MEET -->|produce| K[(Kafka - KRaft)]
         K -->|consume| TR[Transcription Service]
@@ -111,9 +110,9 @@ flowchart TB
 | Layer | Choice | Notes |
 |---|---|---|
 | Language | Go 1.23+ | All services, workspace (`go.work`) monorepo |
-| HTTP framework | Fiber (gateway), Gin (services with REST admin endpoints) | Fiber for gateway's raw throughput; Gin acceptable elsewhere — pick one and standardize (we standardize on **Fiber** everywhere for consistency) |
-| Internal RPC | gRPC + Protobuf | One `.proto` source of truth also defines Kafka payload schemas |
-| External API | REST (OpenAPI 3.1 spec) | Gateway translates REST → gRPC |
+| HTTP framework | Fiber, standardized across every service (gateway and internal) | One framework, one middleware chain to learn/instrument, whether the caller is the browser or another service |
+| Internal communication | REST/JSON over HTTP — same transport as the external API, no gRPC | See `microservices.md` §"Internal Communication" for the reasoning and trade-off |
+| External API | REST (hand-written, OpenAPI 3.1 spec maintained alongside it for docs/codegen) | Gateway reverse-proxies straight through to each service's REST routes — no protocol translation |
 | Primary DB | PostgreSQL 16 + `pgvector` | One cluster, **schema-per-service** logical isolation (see §5 trade-off) |
 | Cache | Redis 7 | Sessions, rate limiting, hot reads, idempotency keys |
 | Message bus | Apache Kafka (KRaft, no ZooKeeper) via Strimzi operator | Event-driven backbone |
@@ -138,7 +137,7 @@ Everything above has a fully free/open-source local footprint — no paid API ke
 
 | # | Service | Core Responsibility |
 |---|---|---|
-| 1 | API Gateway | AuthN edge, routing, rate limiting, REST↔gRPC translation |
+| 1 | API Gateway | AuthN edge, routing, rate limiting, reverse-proxying REST to internal services |
 | 2 | Auth Service | Signup/login, JWT issuance/rotation, password reset |
 | 3 | User Service | User profiles, org membership, RBAC role assignment |
 | 4 | Organization Service | Tenant lifecycle, plans/quotas, org settings |
@@ -162,17 +161,22 @@ Full LLD for each is in [`architecture/microservices.md`](architecture/microserv
   ever queries another's tables directly (only via its API/events). This keeps
   the migration path to real DB-per-service a schema-extraction exercise, not a
   rewrite — a good thing to discuss in an interview.
-- **Protobuf as the single schema source** for both gRPC contracts and Kafka
-  message payloads (JSON-encoded proto or binary proto on the wire) — avoids
-  running a separate Confluent Schema Registry while still getting compile-time
-  contract safety and codegen for every language.
+- **No gRPC — REST/JSON for both external and internal calls.** Considered
+  gRPC for service-to-service traffic (the original plan), but for this
+  project's actual scale — a handful of synchronous internal calls, no
+  polyglot clients, no streaming requirement — one HTTP/JSON stack end to
+  end is simpler to build, test, and debug than two transports, at the cost
+  of losing compile-time contract checking. Kafka message payloads are
+  plain versioned JSON (documented per-topic in `kafka-topics.md`), not
+  generated from any schema file. Full reasoning in `microservices.md`
+  §"Internal Communication."
 - **Reminders via a poll-based scheduler**, not Kafka native delay (Kafka has
   none). A `notification.action_item_reminders` table with `due_at` is polled
   every minute by Notification Service and emits `action-item.reminder-due.v1`.
   Simple, durable, horizontally-safe with a Postgres advisory lock to avoid
   double-fire under multiple replicas.
-- **Tenant isolation defense-in-depth**: JWT carries `org_id`; gRPC interceptor
-  injects it into context; repository layer sets
+- **Tenant isolation defense-in-depth**: JWT carries `org_id`; HTTP
+  middleware injects it into request context; repository layer sets
   `SET LOCAL app.current_org = $org_id` per transaction; Postgres RLS policies
   enforce it at the row level even if application code has a bug. MinIO objects
   are always keyed `org_id/meeting_id/...` and served via short-lived presigned
@@ -193,11 +197,11 @@ Full LLD for each is in [`architecture/microservices.md`](architecture/microserv
   invites, and role management land in Phase 2, once there's an actual
   second org member to manage. See `ROADMAP.md` Phase 1/2 and
   `architecture/api-spec.md` §Users.
-- **The REST API is hand-written, not generated from `.proto`.** gRPC stays
-  the source of truth for internal contracts (and Kafka payload schemas),
-  but the gateway's HTTP handlers are ordinary Go code, not
-  `protoc-gen-openapiv2` output — full reasoning in
-  `architecture/api-spec.md`.
+- **The REST API is entirely hand-written**, external and internal alike —
+  no protobuf, no `protoc-gen-openapiv2`, no generated stubs anywhere.
+  `openapi.yaml` is maintained by hand as documentation/client-codegen
+  tooling, not as a source of truth the handlers are generated from — full
+  reasoning in `architecture/api-spec.md`.
 - **Ticket creation is provider-agnostic** (`TicketProvider` interface in
   Notification Service). The shipped default is a self-built **mock Jira**
   board — the public demo org uses it so a stranger clicking the resume
@@ -223,6 +227,6 @@ Full LLD for each is in [`architecture/microservices.md`](architecture/microserv
 | Availability | 2+ replicas per stateless service, PodDisruptionBudgets, readiness/liveness probes |
 | Scalability | Horizontal via HPA/KEDA; stateless services scale independently of AI workers |
 | Fault tolerance | Kafka consumer retries + DLQ per topic; circuit breaker around Ollama/whisper.cpp calls |
-| Tracing | End-to-end trace_id propagated HTTP → gRPC → Kafka headers → consumer |
+| Tracing | End-to-end trace_id propagated HTTP → HTTP → Kafka headers → consumer |
 | Security | TLS at ingress, JWT + RBAC, RLS multi-tenancy, secrets never in git (SOPS+age) |
 | DR | Postgres WAL archiving to MinIO, nightly logical dumps, documented restore runbook |

@@ -27,7 +27,9 @@ running on `docker compose`, no Kubernetes yet.
   — every non-owner is just `member`, and there's no UI/API to become one
   except by being the signup user). Full RBAC (`admin`/`manager`/`viewer`,
   invites, role changes) is deferred to **Phase 2** — see there for why.
-- API Gateway: JWT middleware, routing to the above over gRPC.
+- API Gateway: JWT middleware, reverse-proxying REST requests to the above
+  services (plain HTTP/JSON internally too — see `microservices.md`
+  §"Internal Communication" for why there's no gRPC in this design).
 - Meeting Service: presigned MinIO upload, meeting metadata, manual status
   update (no pipeline yet — status flips via a debug endpoint).
 - `docker-compose.yaml`: Postgres, Redis, MinIO.
@@ -36,7 +38,7 @@ running on `docker compose`, no Kubernetes yet.
   list/detail page reading whatever the Meeting Service has so far. Thin,
   but real — this is the app a resume link eventually points at, so it
   starts existing now instead of being bolted on in Phase 7.
-- Basic integration tests (`test/integration`) hitting real gRPC endpoints
+- Basic integration tests (`test/integration`) hitting real REST endpoints
   against docker-compose services.
 
 **Deliverables**: a runnable `docker compose up`, a working web UI (not
@@ -69,7 +71,7 @@ end of an uploaded recording, driven by Kafka events, running local models.
   `admin`/`manager`/`viewer` roles, `POST /orgs/{orgId}/invites` +
   accept-invite flow, `PATCH .../role`, deactivation, and the permission
   matrix in `api-spec.md` actually enforced (gateway pre-check + per-service
-  gRPC interceptor re-check, per `observability-security.md` §2). This
+  HTTP middleware re-check, per `observability-security.md` §2). This
   slots in before the AI pipeline work below because everything after it
   benefits from having more than one org member to assign action items to.
 - Stand up Kafka (KRaft, single-node docker-compose) and the topics from
@@ -115,8 +117,8 @@ grounded answer with citations.
 - Enable `pgvector`, `search.chunk_embeddings` table + HNSW index.
 - Search Service: `chunk.created.v1` consumer → Ollama embedding model →
   vector upsert.
-- `SemanticSearch`, `FindSimilarMeetings`, `AskQuestion` (RAG) gRPC + REST
-  endpoints, including the citation-mapping logic.
+- Semantic search, similar-meetings, and RAG `AskQuestion` REST endpoints,
+  including the citation-mapping logic.
 - Tune chunking (overlap, size) against retrieval quality; add a small
   eval script (a handful of known Q&A pairs) to sanity-check RAG answers
   don't regress as prompts change.

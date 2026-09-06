@@ -21,7 +21,7 @@ per service under `migrations/<service>/`).
   exactly the coupling that schema-per-service is meant to avoid. Same
   reasoning for `auth.credentials.user_id` not referencing `user.users.id`.
   The trade-off: Postgres can no longer catch an orphaned `org_id` for you
-  — each service validates the ID it was handed (e.g. via a gRPC call to
+  — each service validates the ID it was handed (e.g. via a REST call to
   Organization Service, or by trusting the JWT it came from) instead of
   the database rejecting the insert.
 - **Uniqueness**: `id` is a `UUID PRIMARY KEY` — globally unique across the

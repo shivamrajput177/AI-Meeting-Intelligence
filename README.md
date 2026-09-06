@@ -9,6 +9,10 @@ The full system design lives under [`docs/`](docs/PROJECT_PLAN.md):
 - [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md) — executive summary, HLD diagram, tech stack, key design decisions
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — 7-phase implementation roadmap (MVP → AI processing → search/RAG → integrations → Kubernetes/CI-CD → production readiness → public demo deployment)
 - [`docs/architecture/`](docs/architecture/) — per-service LLD, database schema, Kafka topic design & event flows, REST API spec, Kubernetes/Helm/CI-CD/ArgoCD, observability/security/multi-tenancy/DR/cost, deployment & demo strategy
-- [`proto/`](proto/) — gRPC contracts (also the schema source for Kafka payloads)
+
+All APIs — external and internal service-to-service alike — are plain
+hand-written REST/JSON; there's no gRPC or protobuf codegen anywhere in
+this design (see `docs/architecture/microservices.md` §"Internal
+Communication" for why).
 
 No implementation code exists yet — this repository currently holds the architecture and planning artifacts that Phase 1 will be built against.

@@ -1,19 +1,45 @@
 # Microservices — Low Level Design
 
-Each service: responsibilities, external/internal APIs, owned DB schema, Kafka
-topics produced/consumed, and scaling strategy. Every table below lives in the
+Each service: responsibilities, APIs, owned DB schema, Kafka topics
+produced/consumed, and scaling strategy. Every table below lives in the
 shared Postgres cluster under the service's own schema (see
 [`database-schema.md`](database-schema.md) for full DDL).
+
+## Internal Communication: REST/JSON, no gRPC
+
+**There is one transport for request/response calls, inside the cluster and
+outside it: REST over HTTP with JSON bodies.** There's no separate internal
+RPC protocol — when a service needs to call another synchronously (e.g.
+Action Item Service resolving an owner's display name via User Service), it
+calls that service's ClusterIP DNS name directly
+(`http://user-service.meeting-intel.svc.cluster.local/...`) using the same
+shared `internal/platform/httpclient` wrapper (timeouts, retries, circuit
+breaker, trace-header propagation) that every outbound call uses — the same
+kind of client hitting Ollama or Jira. The API Gateway forwards the public
+subset of these same routes, adding auth/rate-limiting/logging on top; no
+protocol translation happens anywhere, since it's REST end-to-end. This
+keeps one HTTP stack to learn, instrument, and debug instead of two, at the
+cost of losing gRPC's compile-time contract checking and streaming — a
+trade-off worth being able to state plainly (and its inverse — why a team
+running dozens of services under real load often does want gRPC internally
+for exactly the type-safety and multiplexing this project trades away) is
+itself a fine interview answer.
+
+Every service still documents its full route list below — those *are* both
+its public contract (for whichever routes the gateway forwards) and its
+internal one (for whichever routes another service calls directly).
 
 ---
 
 ## 1. API Gateway
 
 **Responsibilities**: single public entry point; TLS termination (via ingress);
-JWT verification + `org_id`/`role` extraction; request routing to internal
-gRPC services; REST↔gRPC translation (grpc-gateway style); rate limiting
-(Redis token bucket per user+org); request/response logging with trace
-propagation; API versioning (`/api/v1/...`).
+JWT verification (local signature/expiry check + a direct Redis lookup for
+revoked-token jtis — no call to Auth Service needed for this) and
+`org_id`/`role` extraction; reverse-proxying requests to the right internal
+service over REST; rate limiting (Redis token bucket per user+org);
+request/response logging with trace propagation; API versioning
+(`/api/v1/...`).
 
 **APIs**: reverse-proxies all REST endpoints in [`api-spec.md`](api-spec.md);
 owns none of its own business data.
@@ -34,11 +60,13 @@ Prometheus Adapter), 3+ replicas, PDB `minAvailable: 2`.
 rotation, password reset flows, refresh-token revocation, brute-force
 throttling.
 
-**gRPC API** (`proto/auth.proto`): `Signup`, `Login`, `RefreshToken`,
-`RevokeToken`, `ValidateToken`, `RequestPasswordReset`, `ConfirmPasswordReset`.
-
 **REST (via gateway)**: `POST /auth/signup`, `POST /auth/login`,
-`POST /auth/refresh`, `POST /auth/logout`, `POST /auth/password/reset`.
+`POST /auth/refresh`, `POST /auth/logout`,
+`POST /auth/password/reset-request`, `POST /auth/password/reset-confirm`.
+No separate "validate token" call exists — the gateway and any service
+that needs to check a JWT do it locally (signature + expiry) plus a direct
+Redis lookup for the revoked-jti set Auth Service maintains; nothing calls
+Auth Service synchronously to ask "is this token good."
 
 **Schema** (`auth.*`):
 ```
@@ -68,12 +96,14 @@ concurrency with a worker pool per pod, HPA on CPU.
 **Responsibilities**: user profile CRUD, org membership, role assignment
 (RBAC), invite flow.
 
-**gRPC API** (`proto/user.proto`): `CreateUser`, `GetUser`, `UpdateProfile`,
-`ListOrgUsers`, `AssignRole`, `InviteUser`, `AcceptInvite`, `DeactivateUser`.
-
 **REST**: `GET/PATCH /users/me`, `GET /orgs/{orgId}/users`,
+`GET /orgs/{orgId}/users/{userId}` (used internally too — e.g. Action Item
+Service resolving an owner's display name calls this directly),
 `POST /orgs/{orgId}/invites`, `POST /invites/{token}/accept`,
-`PATCH /orgs/{orgId}/users/{userId}/role`.
+`PATCH /orgs/{orgId}/users/{userId}/role`,
+`DELETE /orgs/{orgId}/users/{userId}` (deactivate). User row creation
+itself isn't a called endpoint — it happens inside this service's
+`user.registered.v1` Kafka consumer, not via a synchronous request.
 
 **Schema** (`user.*`):
 ```
@@ -101,11 +131,11 @@ user.invites(id UUID PK, org_id UUID, email CITEXT, role TEXT,
 quota enforcement (max users, max meeting-minutes/month, retention days),
 org-level settings (integrations config: Slack webhook, Jira project, SMTP).
 
-**gRPC API** (`proto/organization.proto`): `CreateOrg`, `GetOrg`,
-`UpdateOrgSettings`, `SuspendOrg`, `GetQuotaUsage`, `SetIntegrationConfig`.
-
-**REST**: `POST /orgs`, `GET /orgs/{orgId}`, `PATCH /orgs/{orgId}/settings`,
-`GET /orgs/{orgId}/usage`.
+**REST**: `POST /orgs`, `GET /orgs/{orgId}`, `PATCH /orgs/{orgId}/settings`
+(covers org settings, integration config, and — admin/ops-only — suspending
+an org), `GET /orgs/{orgId}/usage` (quota usage). `GET /orgs/{orgId}` is
+also called directly by other services when they need org-level config
+(e.g. Notification Service reading `integration_configs`).
 
 **Schema** (`org.*`):
 ```
@@ -137,13 +167,12 @@ lifecycle/status machine (`uploaded → transcribing → transcribed →
 summarizing → summarized → completed → failed`), participant tracking, kicks
 off the processing pipeline by publishing to Kafka.
 
-**gRPC API** (`proto/meeting.proto`): `CreateMeetingUploadIntent`,
-`ConfirmUpload`, `GetMeeting`, `ListMeetings`, `GetMeetingStatus`,
-`AddParticipants`, `DeleteMeeting`.
-
 **REST**: `POST /meetings` (returns presigned upload URL),
-`POST /meetings/{id}/complete-upload`, `GET /meetings/{id}`,
-`GET /meetings`, `GET /meetings/{id}/status`, `DELETE /meetings/{id}`.
+`POST /meetings/{id}/complete-upload`, `GET /meetings/{id}` (also called
+directly by other services that need meeting metadata/participants — e.g.
+Action Item Service matching owners), `GET /meetings`,
+`GET /meetings/{id}/status`, `DELETE /meetings/{id}`,
+`POST /meetings/{id}/participants`.
 
 **Schema** (`meeting.*`):
 ```
@@ -179,10 +208,9 @@ ffmpeg → POST to whisper.cpp `/inference`), produces a diarized transcript
 (speaker segments if diarization model available, else single-speaker),
 stores raw + segmented transcript, publishes completion event.
 
-**gRPC API** (`proto/transcription.proto`): `GetTranscript`,
-`GetTranscriptSegments`, `RetryTranscription` (internal/admin use).
-
-**REST**: `GET /meetings/{id}/transcript`.
+**REST**: `GET /meetings/{id}/transcript` (full transcript + segments —
+also how AI Summary Service reads the transcript it consumes),
+`POST /meetings/{id}/transcript/retry` (admin/internal use).
 
 **Schema** (`transcription.*`):
 ```
@@ -208,14 +236,15 @@ document GPU-node scaling for prod.
 
 ## 7. AI Summary Service
 
-**Responsibilities**: consumes `transcription.completed.v1`; runs the
-**chunking pipeline** (splits transcript into ~500-token overlapping windows,
-speaker-aware); runs the **summarization pipeline** via Ollama (structured
+**Responsibilities**: consumes `transcription.completed.v1` (the event
+itself just carries `meeting_id`/`transcript_id` — this service then calls
+`GET /meetings/{id}/transcript` on Transcription Service over REST to fetch
+the actual text); runs the **chunking pipeline** (splits transcript into
+~500-token overlapping windows, speaker-aware); runs the **summarization
+pipeline** via Ollama (structured
 prompt → executive summary, key decisions, risks, blockers); publishes
 `chunk.created.v1` per chunk batch (for Search Service to embed) and
 `summary.completed.v1`.
-
-**gRPC API** (`proto/ai_summary.proto`): `GetSummary`, `RegenerateSummary`.
 
 **REST**: `GET /meetings/{id}/summary`, `POST /meetings/{id}/summary/regenerate`.
 
@@ -251,12 +280,11 @@ decisions, risks, and blockers with best-guess owners (matched against
 status, and is the source of truth the Notification Service polls for
 reminders and the one that creates Jira tickets from.
 
-**gRPC API** (`proto/action_item.proto`): `ListActionItems`,
-`GetActionItem`, `UpdateActionItemStatus`, `ReassignOwner`,
-`CreateJiraTicketForItem` (triggers event, gateway to Notification Service).
-
 **REST**: `GET /meetings/{id}/action-items`, `GET /action-items?owner=&status=`,
-`PATCH /action-items/{id}`, `POST /action-items/{id}/jira-ticket`.
+`GET /action-items/{id}`, `PATCH /action-items/{id}` (covers status update
+and owner reassignment), `POST /action-items/{id}/jira-ticket` (publishes
+`action-item.jira-requested.v1`, picked up by Notification Service — see
+**Ticketing** in `api-spec.md`).
 
 **Schema** (`actionitem.*`):
 ```
@@ -290,11 +318,8 @@ meetings", and RAG Q&A (retrieve top-k chunks across the org's meeting
 history → build grounded prompt → call Ollama LLM → return answer +
 source citations with meeting/timestamp links).
 
-**gRPC API** (`proto/search.proto`): `SemanticSearch`, `FindSimilarMeetings`,
-`AskQuestion` (RAG), `Reindex`.
-
-**REST**: `GET /search?q=`, `GET /meetings/{id}/similar`,
-`POST /qa/ask`.
+**REST**: `GET /search?q=`, `GET /meetings/{id}/similar`, `POST /qa/ask`,
+`POST /search/reindex` (admin-only, full org backfill).
 
 **Schema** (`search.*`):
 ```
@@ -318,11 +343,11 @@ WHERE org_id = $tenant` (RLS-enforced too) → assemble context with
 grounding system prompt → parse answer + map cited chunk_ids back to
 meeting/timestamp for the response's `citations[]`.
 
-**Scaling**: KEDA on `chunk.created.v1` lag for the embedding path;
-`AskQuestion`/`SemanticSearch` are synchronous read paths — scale via
-standard HPA on the gRPC service pods (separate deployment from the Kafka
-consumer if load profiles diverge — read path is latency-sensitive, embed
-path is throughput-oriented).
+**Scaling**: KEDA on `chunk.created.v1` lag for the embedding path; the
+REST endpoints (`/search`, `/qa/ask`) are synchronous read paths — scale
+via standard HPA on those service pods (a separate Deployment from the
+Kafka-consumer half if load profiles diverge — read path is
+latency-sensitive, embed path is throughput-oriented).
 
 ---
 
@@ -337,10 +362,13 @@ interview demos — see `deployment-demo-strategy.md` §3 for the adapter
 design), and the **reminder scheduler** (poll-based, see design decision in
 `PROJECT_PLAN.md` §5).
 
-**gRPC API** (`proto/notification.proto`): `SendSlackMessage`, `SendEmail`,
-`CreateJiraIssue`, `ScheduleReminder`.
+This service has no synchronous public surface beyond the routes below — it
+acts entirely on Kafka events and its own scheduler tick, dispatching to
+Slack/Email/Jira/the mock board itself.
 
-**REST (admin/debug)**: `POST /orgs/{orgId}/integrations/test`.
+**REST**: `POST /orgs/{orgId}/integrations/test` (admin/debug), plus the
+mock-board routes in `api-spec.md` §Ticketing (`GET /demo/board`,
+`GET /orgs/{orgId}/mock-jira/board`, `PATCH .../mock-jira/issues/{issueKey}`).
 
 **Schema** (`notification.*`):
 ```
@@ -387,9 +415,6 @@ domain events from every other service — meeting trends, team productivity
 metrics, action-item completion rate, most-discussed topics (derived from
 `ai.chunks`/summary keyword extraction) — and serves pre-aggregated
 dashboards without hitting operational tables (CQRS read-side).
-
-**gRPC API** (`proto/analytics.proto`): `GetMeetingTrends`,
-`GetTeamProductivity`, `GetActionItemCompletionRate`, `GetTopTopics`.
 
 **REST**: `GET /analytics/meetings/trends`, `GET /analytics/productivity`,
 `GET /analytics/action-items/completion-rate`, `GET /analytics/topics`.

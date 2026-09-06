@@ -7,8 +7,9 @@
   scraped through the Prometheus Operator's `ServiceMonitor` CRD (attached
   by the shared Helm template).
 - Standard **RED** metrics per service: `http_requests_total{method,route,
-  status}`, `http_request_duration_seconds` (histogram), `grpc_server_
-  handled_total`, `grpc_server_handling_seconds`.
+  status,caller}` (`caller` distinguishes gateway-forwarded traffic from
+  direct service-to-service calls — everything is HTTP, so one metric
+  family covers both), `http_request_duration_seconds` (histogram).
 - Kafka: `kafka_consumergroup_lag` via `kafka-exporter` — the primary signal
   for KEDA scaling and for the "pipeline is backed up" alert.
 - Postgres: `postgres_exporter` — connections, replication lag, RLS-bypass
@@ -34,15 +35,19 @@
   offenders.
 
 ### Tracing (OpenTelemetry + Tempo)
-- OTel Go SDK auto-instruments Fiber middleware, the gRPC client/server
-  interceptors, the Postgres driver (`otelpgx`), the Kafka producer/consumer
-  (manual span + header propagation per the flow in `kafka-topics.md`), and
-  outbound HTTP to Ollama/whisper.cpp/Jira/Slack.
-- All services export via OTLP/gRPC to a cluster-local **OTel Collector**,
-  which fans out: traces → Tempo, metrics → Prometheus remote-write, logs →
-  Loki. Centralizing through the Collector (rather than each service
-  exporting directly to three backends) is itself a design talking point:
-  single point to add sampling, PII scrubbing, or batching.
+- OTel Go SDK auto-instruments Fiber's HTTP middleware (both the gateway's
+  inbound requests and every service's own inbound routes — internal calls
+  are traced exactly like external ones, since they're the same transport),
+  the Postgres driver (`otelpgx`), the Kafka producer/consumer (manual span
+  + header propagation per the flow in `kafka-topics.md`), and outbound
+  HTTP to Ollama/whisper.cpp/Jira/Slack/other services.
+- All services export via **OTLP/HTTP** (not OTLP/gRPC — keeping the
+  no-gRPC-anywhere constraint consistent even for telemetry export) to a
+  cluster-local **OTel Collector**, which fans out: traces → Tempo, metrics
+  → Prometheus remote-write, logs → Loki. Centralizing through the
+  Collector (rather than each service exporting directly to three
+  backends) is itself a design talking point: single point to add
+  sampling, PII scrubbing, or batching.
 - Sampling: head-based 100% in dev, tail-based (error-biased) documented for
   prod via the Collector's `tailsampling` processor.
 
@@ -54,9 +59,9 @@
   Passwords hashed with **argon2id**.
 - **AuthZ / RBAC**: role (`owner|admin|manager|member|viewer`) embedded in
   the JWT claims, enforced at two layers: (1) API Gateway middleware
-  rejects obviously unauthorized routes early; (2) each service's gRPC
-  interceptor re-checks role for the specific RPC (defense in depth — the
-  gateway is not trusted as the sole enforcement point).
+  rejects obviously unauthorized routes early; (2) each service's own HTTP
+  middleware re-checks role for the specific endpoint (defense in depth —
+  the gateway is not trusted as the sole enforcement point).
 - **Multi-tenant isolation**: see §3 below.
 - **Transport security**: TLS at the ingress (cert-manager + a local CA via
   `mkcert`, trusted by the dev machine); intra-cluster traffic is plaintext
@@ -92,7 +97,7 @@ probe hardest).
 | Layer | Isolation mechanism |
 |---|---|
 | Postgres | `org_id` column on every tenant table + **Row-Level Security** policy (`current_setting('app.current_org')`) — enforced even if application code has a bug |
-| Application | Every gRPC request carries `RequestContext.org_id` (from JWT, not client-supplied body field) — repository layer issues `SET LOCAL app.current_org` per transaction before any query |
+| Application | Every internal REST call carries `org_id` (extracted from the caller's JWT server-side, never trusted from a client-supplied body field, and forwarded as a header on service-to-service calls) — repository layer issues `SET LOCAL app.current_org` per transaction before any query |
 | MinIO | Object keys namespaced `org_id/meeting_id/...`; bucket policy denies cross-prefix listing; access only via short-lived presigned URLs scoped to one object |
 | pgvector search | Same RLS policy applies to `search.chunk_embeddings` — a similarity query physically cannot return another tenant's vectors |
 | Kafka | Messages carry `org_id` in the payload; consumers must apply tenant context before any DB write — no shared "global" topic mixes data at rest, only in transit |
