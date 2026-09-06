@@ -52,7 +52,7 @@ minimal churn.
 │   ├── searchsvc/           (domain/usecase/repository/delivery, + ollama client, embeddings, rag)
 │   ├── notificationsvc/     (domain/usecase/repository/delivery, + slack/email/jira clients, scheduler)
 │   ├── analyticssvc/        (domain/usecase/repository/delivery, + rollup)
-│   └── gateway/             (delivery/http only — routes + REST-to-gRPC translation, no domain/usecase of its own)
+│   └── routes/              (delivery/http only — the API Gateway's route handlers + REST-to-gRPC translation, no domain/usecase of its own)
 │
 ├── pkg/                              # importable outside this repo if ever needed
 │   ├── jwtutil/
