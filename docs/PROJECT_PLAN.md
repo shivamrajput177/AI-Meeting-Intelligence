@@ -181,6 +181,23 @@ Full LLD for each is in [`architecture/microservices.md`](architecture/microserv
   quantized 7-8B LLMs are the default so the whole thing runs on a MacBook
   without a GPU. Larger models / GPU acceleration are called out as prod
   upgrades, not requirements.
+- **pgvector over a dedicated vector database** (Pinecone/Weaviate/Milvus/
+  Qdrant): the vectors live next to relational data that's in Postgres
+  anyway, and pgvector avoids a second stateful system with its own
+  multi-tenancy and backup story, at the cost of not scaling as far as a
+  purpose-built vector DB would past tens of millions of vectors. Full
+  comparison in `architecture/database-schema.md` §"Why pgvector".
+- **RBAC is staged, not built all at once**: Phase 1 ships only `owner`/
+  `member` (whoever signs up is the owner; there's no invite flow yet, so
+  there's nothing to assign a second role to). The full 5-role matrix,
+  invites, and role management land in Phase 2, once there's an actual
+  second org member to manage. See `ROADMAP.md` Phase 1/2 and
+  `architecture/api-spec.md` §Users.
+- **The REST API is hand-written, not generated from `.proto`.** gRPC stays
+  the source of truth for internal contracts (and Kafka payload schemas),
+  but the gateway's HTTP handlers are ordinary Go code, not
+  `protoc-gen-openapiv2` output — full reasoning in
+  `architecture/api-spec.md`.
 - **Ticket creation is provider-agnostic** (`TicketProvider` interface in
   Notification Service). The shipped default is a self-built **mock Jira**
   board — the public demo org uses it so a stranger clicking the resume

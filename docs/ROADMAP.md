@@ -17,31 +17,45 @@ running on `docker compose`, no Kubernetes yet.
 
 **Tasks**
 - Scaffold the Go monorepo (`go.work`, `cmd/`, `internal/platform`) per
-  `folder-structure.md`.
+  `folder-structure.md` (domain/usecase/repository/delivery per service).
 - Postgres schema + migrations for `org`, `user`, `auth`, `meeting`
-  (RLS from day one, not bolted on later).
+  (RLS from day one, not bolted on later). The `role` column and its five
+  values exist in the schema now, but only two are used yet — see below.
 - Auth Service: signup/login/JWT (access + refresh), argon2id hashing.
-- Organization + User services: create org, invite flow, RBAC role storage.
+- Organization + User services: **create org + owner user only** (signup
+  creates one org and its `owner`; no invite flow, no role management yet
+  — every non-owner is just `member`, and there's no UI/API to become one
+  except by being the signup user). Full RBAC (`admin`/`manager`/`viewer`,
+  invites, role changes) is deferred to **Phase 2** — see there for why.
 - API Gateway: JWT middleware, routing to the above over gRPC.
 - Meeting Service: presigned MinIO upload, meeting metadata, manual status
   update (no pipeline yet — status flips via a debug endpoint).
 - `docker-compose.yaml`: Postgres, Redis, MinIO.
+- `web/` frontend scaffold (React + Vite + TS, per `folder-structure.md`):
+  signup/login pages, an authenticated shell, an upload page, a meeting
+  list/detail page reading whatever the Meeting Service has so far. Thin,
+  but real — this is the app a resume link eventually points at, so it
+  starts existing now instead of being bolted on in Phase 7.
 - Basic integration tests (`test/integration`) hitting real gRPC endpoints
   against docker-compose services.
 
-**Deliverables**: a runnable `docker compose up`, `curl` scripts (or Postman
-collection) that signup → login → create org → upload a file → fetch
-metadata; migrations applied automatically on startup; README quickstart.
+**Deliverables**: a runnable `docker compose up`, a working web UI (not
+just `curl`/Postman) that can sign up, log in, create an org, upload a
+file, and see its metadata; migrations applied automatically on startup;
+README quickstart.
 
-**Learning outcomes**: JWT auth design (access/refresh rotation), RBAC
-modeling, multi-tenant schema design with Postgres RLS from the start,
-presigned-URL upload pattern (why the API server shouldn't proxy large file
-bytes), clean-architecture layering in Go.
+**Learning outcomes**: JWT auth design (access/refresh rotation),
+multi-tenant schema design with Postgres RLS from the start, presigned-URL
+upload pattern (why the API server shouldn't proxy large file bytes),
+Clean Architecture layering in Go, deliberately staging RBAC complexity
+(ship the simplest correct permission model, add roles when there's an
+actual second role to enforce).
 
 **Interview topics covered**: authentication vs. authorization, token
 rotation/revocation strategies, multi-tenant data modeling, RLS vs.
 application-layer isolation trade-offs, REST API design, database schema
-design for a SaaS product.
+design for a SaaS product, incremental delivery / YAGNI vs. designing the
+schema to not need a rewrite later.
 
 ---
 
@@ -51,6 +65,13 @@ design for a SaaS product.
 end of an uploaded recording, driven by Kafka events, running local models.
 
 **Tasks**
+- **Full RBAC** (deferred from Phase 1, now that there's a reason for it):
+  `admin`/`manager`/`viewer` roles, `POST /orgs/{orgId}/invites` +
+  accept-invite flow, `PATCH .../role`, deactivation, and the permission
+  matrix in `api-spec.md` actually enforced (gateway pre-check + per-service
+  gRPC interceptor re-check, per `observability-security.md` §2). This
+  slots in before the AI pipeline work below because everything after it
+  benefits from having more than one org member to assign action items to.
 - Stand up Kafka (KRaft, single-node docker-compose) and the topics from
   `kafka-topics.md` relevant to this phase.
 - Transcription Service: whisper.cpp server integration, `meeting.uploaded.v1`
@@ -71,15 +92,17 @@ end of an uploaded recording, driven by Kafka events, running local models.
 status progress through Kafka-driven stages, fetch transcript/summary/action
 items via REST.
 
-**Learning outcomes**: event-driven pipeline design, idempotent consumer
-patterns, prompt engineering for structured extraction against a local LLM,
-running CPU-bound ML inference inside a service boundary, circuit breakers/
-retries around slow external calls.
+**Learning outcomes**: RBAC modeling and enforcement (defense in depth —
+gateway and per-service checks), event-driven pipeline design, idempotent
+consumer patterns, prompt engineering for structured extraction against a
+local LLM, running CPU-bound ML inference inside a service boundary,
+circuit breakers/retries around slow external calls.
 
-**Interview topics covered**: event-driven architecture, Kafka consumer
-group semantics, at-least-once delivery + idempotency, saga-like multi-step
-async workflows without a central orchestrator, designing for partial
-failure, LLM integration patterns (prompting, structured output, evaluation).
+**Interview topics covered**: RBAC design and enforcement layers,
+event-driven architecture, Kafka consumer group semantics, at-least-once
+delivery + idempotency, saga-like multi-step async workflows without a
+central orchestrator, designing for partial failure, LLM integration
+patterns (prompting, structured output, evaluation).
 
 ---
 

@@ -3,9 +3,12 @@
 Base URL: `/api/v1`. Auth: `Authorization: Bearer <JWT>` unless noted public.
 All responses `application/json`; errors follow
 `{"error": {"code": "string", "message": "string", "requestId": "uuid"}}`.
-Full machine-readable spec to be maintained as `openapi.yaml` alongside this
-doc once implementation starts (generated from gRPC via `protoc-gen-openapiv2`
-or hand-maintained — decide in Phase 1).
+The REST API is **hand-written**, not generated from the `.proto` files —
+the gateway's HTTP handlers are ordinary Go code that call the internal
+gRPC services and shape the JSON response themselves. `openapi.yaml` is
+maintained by hand alongside this doc as documentation/tooling (Swagger UI,
+client codegen for the frontend), not as the source of truth for the API's
+behavior; the Go handler code is the source of truth.
 
 ## Auth
 
@@ -28,15 +31,22 @@ or hand-maintained — decide in Phase 1).
 
 ## Users
 
-| Method | Path | Roles | Description |
-|---|---|---|---|
-| GET | `/users/me` | any | Current profile |
-| PATCH | `/users/me` | any | Update own profile |
-| GET | `/orgs/{orgId}/users` | any member | List org users |
-| POST | `/orgs/{orgId}/invites` | owner, admin | Invite user |
-| POST | `/invites/{token}/accept` | public | Accept invite |
-| PATCH | `/orgs/{orgId}/users/{userId}/role` | owner, admin | Change RBAC role |
-| DELETE | `/orgs/{orgId}/users/{userId}` | owner, admin | Deactivate user |
+**Phase 1 ships only the first two rows.** A Phase 1 org has exactly one
+role model — the signup user is `owner`, everyone else who signs up is
+`member` — so there's nothing yet to invite into or assign a role within.
+The rest of this table (invites, role changes, deactivation) is real RBAC
+and lands in **Phase 2**, once there's more than one org member to manage.
+See `ROADMAP.md` Phase 1 and Phase 2 for the reasoning.
+
+| Method | Path | Roles | Description | Phase |
+|---|---|---|---|---|
+| GET | `/users/me` | any | Current profile | 1 |
+| PATCH | `/users/me` | any | Update own profile | 1 |
+| GET | `/orgs/{orgId}/users` | any member | List org users | 2 |
+| POST | `/orgs/{orgId}/invites` | owner, admin | Invite user | 2 |
+| POST | `/invites/{token}/accept` | public | Accept invite | 2 |
+| PATCH | `/orgs/{orgId}/users/{userId}/role` | owner, admin | Change RBAC role | 2 |
+| DELETE | `/orgs/{orgId}/users/{userId}` | owner, admin | Deactivate user | 2 |
 
 ## Meetings
 
@@ -65,7 +75,7 @@ or hand-maintained — decide in Phase 1).
 | GET | `/meetings/{id}/action-items` | member+ | Items for one meeting |
 | GET | `/action-items` | member+ | Cross-meeting, filters: `owner`, `status`, `type`, `dueBefore` |
 | PATCH | `/action-items/{id}` | member+ (owner or admin) | Update status/owner/due date |
-| POST | `/action-items/{id}/jira-ticket` | member+ | Create linked Jira ticket |
+| POST | `/action-items/{id}/jira-ticket` | member+ | Create a ticket — see **Ticketing** section below |
 
 ## Search / Knowledge (RAG)
 
@@ -111,7 +121,7 @@ or hand-maintained — decide in Phase 1).
 - Every response carries `X-Request-Id` (= trace id) for correlating with
   Tempo/Loki.
 
-## RBAC Role Matrix (summary)
+## RBAC Role Matrix (Phase 2+ target — Phase 1 is just `owner`/`member`)
 
 | Action | owner | admin | manager | member | viewer |
 |---|:-:|:-:|:-:|:-:|:-:|

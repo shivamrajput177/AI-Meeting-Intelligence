@@ -14,7 +14,24 @@ per service under `migrations/<service>/`).
   via a shared `set_updated_at()` trigger.
 - Foreign keys **do not** cross schema boundaries (microservice DB
   independence) — cross-service references are UUIDs validated at the
-  application layer, not enforced by FK constraint.
+  application layer, not enforced by FK constraint. Concretely: `user.users`
+  has an `org_id` column but **no** `REFERENCES org.organizations(id)` — a
+  real FK there would mean User Service's schema physically depends on
+  Organization Service's table existing and being migrated first, which is
+  exactly the coupling that schema-per-service is meant to avoid. Same
+  reasoning for `auth.credentials.user_id` not referencing `user.users.id`.
+  The trade-off: Postgres can no longer catch an orphaned `org_id` for you
+  — each service validates the ID it was handed (e.g. via a gRPC call to
+  Organization Service, or by trusting the JWT it came from) instead of
+  the database rejecting the insert.
+- **Uniqueness**: `id` is a `UUID PRIMARY KEY` — globally unique across the
+  *entire* table, not just within one org; two different orgs' users never
+  collide on `id` by construction (a random 122-bit UUID), so there's no
+  need for a composite key like `(org_id, id)`. What *is* scoped to the
+  org is `email` — `UNIQUE (org_id, email)` means the same email address
+  can exist as a *separate* user row in two different orgs (deliberate: an
+  org membership is its own account here, not a shared global identity —
+  see the note on this trade-off below the `user.users` table).
 
 ## Row-Level Security pattern (applied per tenant table)
 
@@ -23,12 +40,30 @@ ALTER TABLE meeting.meetings ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON meeting.meetings
   USING (org_id = current_setting('app.current_org', true)::uuid);
 ```
+Read this as two separate statements:
+1. `ENABLE ROW LEVEL SECURITY` turns off Postgres's default behavior (any
+   query sees every row) for this table — from here on, **every** `SELECT`/
+   `UPDATE`/`DELETE` against `meeting.meetings` is silently filtered by
+   whatever policies exist, for every role except the table owner/superuser.
+2. `CREATE POLICY ... USING (...)` is the filter itself: it's appended to
+   every query as an implicit `WHERE`, equivalent to Postgres rewriting
+   `SELECT * FROM meeting.meetings` into
+   `SELECT * FROM meeting.meetings WHERE org_id = current_setting('app.current_org', true)::uuid`
+   automatically, no matter what the application code actually wrote.
+   `current_setting('app.current_org', true)` reads a session-local
+   variable (the `true` second argument means "return NULL instead of
+   erroring if it's unset" — that NULL then matches no `org_id`, so an
+   unset context fails closed to zero rows, not all rows).
+
 Every request-scoped DB transaction begins with:
 ```sql
 SET LOCAL app.current_org = '<org_id from JWT>';
 ```
 issued by a shared repository middleware in `internal/platform/db`, so
-forgetting it fails closed (no rows visible) rather than open.
+forgetting it fails closed (no rows visible) rather than open. This is what
+makes RLS a second, independent line of defense: even if a handler bug lets
+a request through without an application-layer org check, the database
+itself will not return another tenant's rows.
 
 ## Extensions
 
@@ -37,6 +72,47 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS vector;   -- pgvector
 CREATE EXTENSION IF NOT EXISTS citext;
 ```
+
+## Why pgvector (and not a dedicated vector database)
+
+| Option | What it is | Why not chosen here |
+|---|---|---|
+| **pgvector** (chosen) | A Postgres extension adding a `vector` column type + ANN indexes (IVFFlat, HNSW) | — |
+| Pinecone | Managed, proprietary vector DB | Paid SaaS, violates the "no paid cloud services" constraint outright |
+| Weaviate / Milvus / Qdrant | Self-hostable, open-source, purpose-built vector DBs | Free to run, but each is *another stateful service* to deploy, operate, back up, and secure (its own auth, its own multi-tenancy story) on top of everything already in the stack — real operational cost on a laptop for a benefit that only shows up past tens of millions of vectors |
+| Elasticsearch/OpenSearch (k-NN plugin) | Search engine with vector search bolted on | Heavier resource footprint (JVM) than Postgres for a feature we'd only use narrowly; better if full-text search were the primary need, which it isn't here |
+| Chroma | Lightweight embedded vector store | Great for a prototype script, not built for multi-tenant RLS, concurrent writers, or the durability guarantees the rest of the app already gets from Postgres |
+
+**The actual reasoning**: this project's vectors (chunk embeddings) *live
+next to*, and are always queried *together with*, ordinary relational data
+that already has to be in Postgres anyway (`org_id`, `meeting_id`, tenant
+isolation, transactional writes alongside the chunk row itself). pgvector
+means:
+- **One database to run, back up, and secure**, not two — no second
+  stateful system with its own multi-tenancy model to reinvent (Postgres
+  RLS just applies to `search.chunk_embeddings` like any other table, see
+  the `search` schema below).
+- **Transactional consistency** — a chunk's text row and its embedding can
+  be written in the same transaction as a normal Postgres `INSERT`; with a
+  separate vector DB you'd have a distributed dual-write problem (write to
+  Postgres, then write to Pinecone/Weaviate, and handle the case where one
+  succeeds and the other doesn't).
+- **Good enough performance at this project's actual scale.** An HNSW
+  index in pgvector comfortably handles low-single-digit millions of
+  vectors with sub-50ms queries — far beyond what a portfolio project (or
+  most real per-tenant SaaS workloads) will ever hold. Dedicated vector DBs
+  win at a scale (tens/hundreds of millions of vectors, need for
+  distributed sharding across many nodes) this system isn't built for.
+- **$0 and one less thing to learn to operate**, matching the project's
+  hard constraint of free, local, Docker/K8s-only infrastructure.
+
+The honest trade-off to be able to state in an interview: if this were a
+company with 500M+ chunks across all tenants and sub-10ms p99 latency
+requirements at that scale, a dedicated vector DB (Qdrant is a reasonable
+pick — open-source, good filtering support, straightforward to self-host)
+would win. pgvector is the right choice for this system's actual scale and
+constraints, not the right choice unconditionally — knowing where the
+crossover point is matters more than picking either one dogmatically.
 
 ## Schemas & Tables
 
@@ -90,6 +166,23 @@ CREATE TABLE "user".users (
 ALTER TABLE "user".users ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON "user".users
   USING (org_id = current_setting('app.current_org', true)::uuid);
+```
+**Identity model trade-off**: `email` is unique per-org (`UNIQUE (org_id,
+email)`), not globally. That means `alice@co.com` in Org A and
+`alice@co.com` in Org B are two separate `user.users` rows with two
+separate `id`s, two separate passwords in `auth.credentials`, and no
+shared login — this project's "org membership = account" model, which is
+simple and matches Phase 1's scope (one org per signup). The alternative
+some real SaaS products use is a **global identity table** (`identity.people`
+keyed by email, one row per human) plus a separate `org_memberships(org_id,
+person_id, role)` join table, so one login can belong to several orgs and
+switch between them. That's a legitimate upgrade path if multi-org
+membership becomes a real requirement later — it's a schema addition
+(a join table + a foreign key from `auth.credentials` to the identity
+table instead of directly to an org-scoped user row), not a rewrite,
+precisely because `id` is already a stable, globally-unique UUID rather
+than something derived from `org_id`.
+```sql
 
 CREATE TABLE "user".invites (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -129,6 +222,13 @@ CREATE TABLE auth.refresh_tokens (
   user_agent TEXT,
   ip INET
 );
+-- Partial index: only indexes rows where revoked_at IS NULL (i.e. still-active
+-- tokens). This is a "find this user's live refresh token(s)" lookup that
+-- runs on every /auth/refresh and /auth/logout call, so it needs to be fast;
+-- it's deliberately *not* an index over all refresh_tokens, because most
+-- rows in this table are historical (expired or revoked) and irrelevant to
+-- that query — indexing them too would waste space and slow down every
+-- INSERT/UPDATE on the table for rows this query will never match anyway.
 CREATE INDEX ON auth.refresh_tokens (user_id) WHERE revoked_at IS NULL;
 
 CREATE TABLE auth.password_reset_tokens (
