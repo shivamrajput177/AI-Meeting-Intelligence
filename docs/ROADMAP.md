@@ -1,12 +1,60 @@
 # Implementation Roadmap
 
-Six phases, each independently demoable and each mapped to a set of
+Seven phases, each independently demoable and each mapped to a set of
 distributed-systems topics worth being able to speak to in a Senior/Staff
 backend interview. Build order is deliberately **walking skeleton →
 vertical slice → breadth → depth**: Phase 1 gets one meeting through the
 whole pipeline end-to-end on a single node before anything is scaled,
 event-driven, or Kubernetes-native — a pattern worth naming explicitly in an
 interview ("I always build a thin E2E slice before parallelizing scope").
+
+## Phase & Sub-Phase Index
+
+Every phase below is broken into small, one-service-or-feature-at-a-time
+sub-phases — build and check off one row at a time rather than the whole
+phase at once. This table is the quick-reference; the full detail (tasks,
+deliverables, learning outcomes, interview topics) for each phase follows
+below it.
+
+| Phase | Sub-phase | Service / Feature | What ships |
+|---|---|---|---|
+| **1 · MVP** | 1.1 | Platform scaffold | `go.work`, `internal/platform`, repo layout |
+| | 1.2 | Auth Service | signup, login, JWT issue/refresh |
+| | 1.3 | Organization + User Service | create org, owner/member only (no RBAC yet) |
+| | 1.4 | Meeting Service | presigned upload, metadata, manual status |
+| | 1.5 | API Gateway | JWT middleware, reverse-proxy routing |
+| | 1.6 | Frontend (`web/`) | signup/login/upload/meeting-list pages |
+| | 1.7 | Local infra | `docker-compose.yaml`, integration tests |
+| **2 · AI Processing** | 2.1 | User + Org Service | full RBAC: roles, invites, role management |
+| | 2.2 | Kafka infra | topics for this phase, docker-compose Kafka |
+| | 2.3 | Transcription Service | whisper.cpp pipeline, transcript + segments |
+| | 2.4 | AI Summary Service | chunking + summarization pipeline |
+| | 2.5 | Action Item Service | structured extraction, owner matching |
+| | 2.6 | Meeting Service | status-machine wiring off Kafka events |
+| | 2.7 | Observability (basics) | structured logs + trace_id across Kafka |
+| **3 · Search & RAG** | 3.1 | Database | enable `pgvector`, HNSW index |
+| | 3.2 | Search Service — embed | `chunk.created.v1` consumer, Ollama embeddings |
+| | 3.3 | Search Service — query | semantic search, similar-meetings |
+| | 3.4 | Search Service — RAG | `AskQuestion`, citation mapping |
+| | 3.5 | Analytics Service | rollup tables, first consumers wired |
+| **4 · Integrations** | 4.1 | Notification Service — core | transactional outbox, Slack, Email |
+| | 4.2 | Ticketing — mock | `MockJiraProvider`, `/demo/board` |
+| | 4.3 | Ticketing — real (stretch) | `AtlassianJiraProvider`, Jira webhook |
+| | 4.4 | Notification Service — scheduler | poll-based reminders, advisory lock |
+| | 4.5 | Organization Service | integration config (Slack/Jira secrets) |
+| **5 · Kubernetes & CI/CD** | 5.1 | Cluster infra | Kind, Strimzi, MinIO operator |
+| | 5.2 | Helm | umbrella + per-service charts |
+| | 5.3 | Autoscaling | KEDA `ScaledObject`s on Kafka lag |
+| | 5.4 | CI | GitHub Actions: build/test/scan/push |
+| | 5.5 | CD | ArgoCD `ApplicationSet`, GitOps sync waves |
+| **6 · Production Readiness** | 6.1 | Observability | Prometheus/Grafana/Loki/Tempo, full stack |
+| | 6.2 | Security | NetworkPolicies, mTLS (stretch), scan gates |
+| | 6.3 | DR | Postgres backup/restore drill, measured RTO |
+| | 6.4 | Resilience | chaos pod-kill tests, cost/resource pass |
+| **7 · Public Demo** | 7.1 | Hosting | Oracle Cloud VM, trimmed docker-compose |
+| | 7.2 | Access | Cloudflare Tunnel, HTTPS subdomain |
+| | 7.3 | Demo data | seeded org, rate-limited live upload |
+| | 7.4 | Docs | README banner, recorded cluster walkthrough |
 
 ---
 
