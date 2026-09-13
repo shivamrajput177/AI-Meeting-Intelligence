@@ -37,25 +37,6 @@ func IsRevoked(ctx context.Context, rdb *redis.Client, jti string) (bool, error)
 	return n > 0, nil
 }
 
-// AllowFixedWindow implements a simple fixed-window rate limiter: at most
-// limit calls per window for the given key. It's a deliberately simpler
-// stand-in for the token-bucket design in
-// docs/architecture/observability-security.md — good enough to demonstrate
-// and exercise the pattern in Phase 1; swapping in a token bucket later
-// doesn't change any caller of this function.
-func AllowFixedWindow(ctx context.Context, rdb *redis.Client, key string, limit int, window time.Duration) (bool, error) {
-	count, err := rdb.Incr(ctx, key).Result()
-	if err != nil {
-		return false, err
-	}
-	if count == 1 {
-		if err := rdb.Expire(ctx, key, window).Err(); err != nil {
-			return false, err
-		}
-	}
-	return count <= int64(limit), nil
-}
-
 // RateLimitKey builds a per-identity, per-route rate-limit counter key.
 func RateLimitKey(identity, route string) string {
 	return fmt.Sprintf("ratelimit:%s:%s", route, identity)

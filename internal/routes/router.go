@@ -28,12 +28,23 @@ type ServiceURLs struct {
 func Register(app *fiber.App, urls ServiceURLs, jwtSecret []byte, rdb *redis.Client, log *slog.Logger) {
 	api := app.Group("/api/v1")
 
+	// Token-bucket limits below are expressed as (burst capacity, steady
+	// refill rate) — e.g. signup allows up to 10 back-to-back attempts,
+	// then refills at 10-per-minute after that, rather than a hard reset
+	// every 60s (see middleware.RateLimit and redisx.AllowTokenBucket for
+	// why token bucket over the fixed-window counter this replaced).
+	const (
+		signupBurst, signupPerMinute = 10, 10.0
+		loginBurst, loginPerMinute   = 20, 20.0
+		resetBurst, resetPerMinute   = 10, 10.0
+	)
+
 	public := api.Group("")
-	public.Post("/auth/signup", middleware.RateLimit(rdb, "auth-signup", 10), proxy.ForwardTo(urls.Auth))
-	public.Post("/auth/login", middleware.RateLimit(rdb, "auth-login", 20), proxy.ForwardTo(urls.Auth))
+	public.Post("/auth/signup", middleware.RateLimit(rdb, "auth-signup", signupBurst, signupPerMinute/60), proxy.ForwardTo(urls.Auth))
+	public.Post("/auth/login", middleware.RateLimit(rdb, "auth-login", loginBurst, loginPerMinute/60), proxy.ForwardTo(urls.Auth))
 	public.Post("/auth/refresh", proxy.ForwardTo(urls.Auth))
 	public.Post("/auth/logout", proxy.ForwardTo(urls.Auth))
-	public.Post("/auth/password/reset-request", middleware.RateLimit(rdb, "auth-reset", 10), proxy.ForwardTo(urls.Auth))
+	public.Post("/auth/password/reset-request", middleware.RateLimit(rdb, "auth-reset", resetBurst, resetPerMinute/60), proxy.ForwardTo(urls.Auth))
 	public.Post("/auth/password/reset-confirm", proxy.ForwardTo(urls.Auth))
 
 	protected := api.Group("", middleware.Auth(jwtSecret, rdb, log))
