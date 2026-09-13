@@ -5,6 +5,8 @@ package main
 import (
 	"os"
 
+	"github.com/redis/go-redis/v9"
+
 	"github.com/shivamrajput177/ai-meeting-intelligence/internal/platform/config"
 	"github.com/shivamrajput177/ai-meeting-intelligence/internal/platform/httpserver"
 	"github.com/shivamrajput177/ai-meeting-intelligence/internal/platform/logger"
@@ -15,21 +17,33 @@ import (
 func main() {
 	log := logger.New("api-gateway", logger.ParseLevel(config.Env("LOG_LEVEL", "info")))
 
-	rdb := redisx.NewClient(config.Env("REDIS_ADDR", "localhost:6379"))
-	jwtSecret := []byte(config.Env("JWT_SIGNING_KEY", "dev-only-signing-key-change-me"))
+	rdb := initRedis()
+	jwtSecret := initJWTSecret()
 
 	srv := httpserver.New("api-gateway", log)
-	routes.Register(srv.Mux, routes.ServiceURLs{
-		Auth:    config.Env("AUTH_SERVICE_URL", "http://localhost:8080"),
-		User:    config.Env("USER_SERVICE_URL", "http://localhost:8081"),
-		Org:     config.Env("ORG_SERVICE_URL", "http://localhost:8082"),
-		Meeting: config.Env("MEETING_SERVICE_URL", "http://localhost:8083"),
-	}, jwtSecret, rdb, log)
+	routes.Register(srv.Mux, initServiceURLs(), jwtSecret, rdb, log)
 
 	addr := ":" + config.Env("PORT", "8000")
 	log.Info("starting", "addr", addr)
 	if err := srv.ListenAndServe(addr); err != nil {
 		log.Error("server stopped", "err", err)
 		os.Exit(1)
+	}
+}
+
+func initRedis() *redis.Client {
+	return redisx.NewClient(config.Env("REDIS_ADDR", "localhost:6379"))
+}
+
+func initJWTSecret() []byte {
+	return []byte(config.Env("JWT_SIGNING_KEY", "dev-only-signing-key-change-me"))
+}
+
+func initServiceURLs() routes.ServiceURLs {
+	return routes.ServiceURLs{
+		Auth:    config.Env("AUTH_SERVICE_URL", "http://localhost:8080"),
+		User:    config.Env("USER_SERVICE_URL", "http://localhost:8081"),
+		Org:     config.Env("ORG_SERVICE_URL", "http://localhost:8082"),
+		Meeting: config.Env("MEETING_SERVICE_URL", "http://localhost:8083"),
 	}
 }
