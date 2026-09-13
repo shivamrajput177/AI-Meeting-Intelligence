@@ -3,14 +3,14 @@
 package http
 
 import (
+	"net/http"
 	"strconv"
 	"time"
-
-	"github.com/gofiber/fiber/v2"
 
 	"github.com/shivamrajput177/ai-meeting-intelligence/internal/meetingsvc/domain"
 	"github.com/shivamrajput177/ai-meeting-intelligence/internal/meetingsvc/usecase"
 	"github.com/shivamrajput177/ai-meeting-intelligence/internal/platform/apperr"
+	"github.com/shivamrajput177/ai-meeting-intelligence/internal/platform/httpserver"
 	"github.com/shivamrajput177/ai-meeting-intelligence/internal/platform/reqctx"
 )
 
@@ -73,42 +73,48 @@ type createMeetingResponse struct {
 	UploadURL string `json:"uploadUrl"`
 }
 
-func (h *Handler) CreateUploadIntent(c *fiber.Ctx) error {
+func (h *Handler) CreateUploadIntent(w http.ResponseWriter, r *http.Request) error {
 	var req createMeetingRequest
-	if err := c.BodyParser(&req); err != nil {
-		return apperr.BadRequest("invalid request body")
+	if err := httpserver.DecodeJSON(r, &req); err != nil {
+		return err
 	}
-	out, err := h.createUploadIntent.Execute(c.UserContext(), usecase.CreateUploadIntentInput{
-		OrgID: reqctx.OrgID(c.UserContext()), CreatedBy: reqctx.UserID(c.UserContext()), Title: req.Title,
+	out, err := h.createUploadIntent.Execute(r.Context(), usecase.CreateUploadIntentInput{
+		OrgID: reqctx.OrgID(r.Context()), CreatedBy: reqctx.UserID(r.Context()), Title: req.Title,
 	})
 	if err != nil {
 		return err
 	}
-	return c.Status(fiber.StatusCreated).JSON(createMeetingResponse{MeetingID: out.MeetingID, UploadURL: out.UploadURL})
+	httpserver.JSON(w, http.StatusCreated, createMeetingResponse{MeetingID: out.MeetingID, UploadURL: out.UploadURL})
+	return nil
 }
 
-func (h *Handler) ConfirmUpload(c *fiber.Ctx) error {
-	meeting, err := h.confirmUpload.Execute(c.UserContext(), reqctx.OrgID(c.UserContext()), c.Params("id"))
+func (h *Handler) ConfirmUpload(w http.ResponseWriter, r *http.Request) error {
+	meeting, err := h.confirmUpload.Execute(r.Context(), reqctx.OrgID(r.Context()), r.PathValue("id"))
 	if err != nil {
 		return err
 	}
-	return c.JSON(toMeetingResponse(meeting))
+	httpserver.JSON(w, http.StatusOK, toMeetingResponse(meeting))
+	return nil
 }
 
-func (h *Handler) GetMeeting(c *fiber.Ctx) error {
-	meeting, err := h.getMeeting.Execute(c.UserContext(), reqctx.OrgID(c.UserContext()), c.Params("id"))
+func (h *Handler) GetMeeting(w http.ResponseWriter, r *http.Request) error {
+	meeting, err := h.getMeeting.Execute(r.Context(), reqctx.OrgID(r.Context()), r.PathValue("id"))
 	if err != nil {
 		return err
 	}
-	return c.JSON(toMeetingResponse(meeting))
+	httpserver.JSON(w, http.StatusOK, toMeetingResponse(meeting))
+	return nil
 }
 
-func (h *Handler) GetStatus(c *fiber.Ctx) error {
-	meeting, err := h.getMeeting.Execute(c.UserContext(), reqctx.OrgID(c.UserContext()), c.Params("id"))
+func (h *Handler) GetStatus(w http.ResponseWriter, r *http.Request) error {
+	meeting, err := h.getMeeting.Execute(r.Context(), reqctx.OrgID(r.Context()), r.PathValue("id"))
 	if err != nil {
 		return err
 	}
-	return c.JSON(fiber.Map{"meetingId": meeting.ID, "status": meeting.Status, "updatedAt": meeting.UpdatedAt.Format(time.RFC3339)})
+	httpserver.JSON(w, http.StatusOK, map[string]any{
+		"meetingId": meeting.ID, "status": meeting.Status, "updatedAt": meeting.UpdatedAt.Format(time.RFC3339),
+	})
+	return nil
 }
 
 type listMeetingsResponse struct {
@@ -118,11 +124,18 @@ type listMeetingsResponse struct {
 	Total    int               `json:"total"`
 }
 
-func (h *Handler) ListMeetings(c *fiber.Ctx) error {
-	page, _ := strconv.Atoi(c.Query("page", "1"))
-	pageSize, _ := strconv.Atoi(c.Query("pageSize", "20"))
+func (h *Handler) ListMeetings(w http.ResponseWriter, r *http.Request) error {
+	q := r.URL.Query()
+	page, _ := strconv.Atoi(q.Get("page"))
+	if page == 0 {
+		page = 1
+	}
+	pageSize, _ := strconv.Atoi(q.Get("pageSize"))
+	if pageSize == 0 {
+		pageSize = 20
+	}
 
-	items, total, err := h.listMeetings.Execute(c.UserContext(), reqctx.OrgID(c.UserContext()), domain.ListFilter{Page: page, PageSize: pageSize})
+	items, total, err := h.listMeetings.Execute(r.Context(), reqctx.OrgID(r.Context()), domain.ListFilter{Page: page, PageSize: pageSize})
 	if err != nil {
 		return err
 	}
@@ -130,7 +143,8 @@ func (h *Handler) ListMeetings(c *fiber.Ctx) error {
 	for _, m := range items {
 		resp.Data = append(resp.Data, toMeetingResponse(m))
 	}
-	return c.JSON(resp)
+	httpserver.JSON(w, http.StatusOK, resp)
+	return nil
 }
 
 type updateStatusRequest struct {
@@ -141,24 +155,26 @@ type updateStatusRequest struct {
 // meeting's status — see docs/architecture/microservices.md §5 and
 // usecase.UpdateStatusUseCase's doc comment. Restricted to the org owner:
 // it's a stand-in for the real pipeline, not a feature end users get.
-func (h *Handler) UpdateStatus(c *fiber.Ctx) error {
-	if reqctx.Role(c.UserContext()) != "owner" {
+func (h *Handler) UpdateStatus(w http.ResponseWriter, r *http.Request) error {
+	if reqctx.Role(r.Context()) != "owner" {
 		return apperr.Forbidden("only the organization owner can manually override meeting status in Phase 1")
 	}
 	var req updateStatusRequest
-	if err := c.BodyParser(&req); err != nil {
-		return apperr.BadRequest("invalid request body")
+	if err := httpserver.DecodeJSON(r, &req); err != nil {
+		return err
 	}
-	meeting, err := h.updateStatus.Execute(c.UserContext(), reqctx.OrgID(c.UserContext()), c.Params("id"), req.Status)
+	meeting, err := h.updateStatus.Execute(r.Context(), reqctx.OrgID(r.Context()), r.PathValue("id"), req.Status)
 	if err != nil {
 		return err
 	}
-	return c.JSON(toMeetingResponse(meeting))
+	httpserver.JSON(w, http.StatusOK, toMeetingResponse(meeting))
+	return nil
 }
 
-func (h *Handler) DeleteMeeting(c *fiber.Ctx) error {
-	if err := h.deleteMeeting.Execute(c.UserContext(), reqctx.OrgID(c.UserContext()), c.Params("id")); err != nil {
+func (h *Handler) DeleteMeeting(w http.ResponseWriter, r *http.Request) error {
+	if err := h.deleteMeeting.Execute(r.Context(), reqctx.OrgID(r.Context()), r.PathValue("id")); err != nil {
 		return err
 	}
-	return c.SendStatus(fiber.StatusNoContent)
+	httpserver.NoContent(w)
+	return nil
 }

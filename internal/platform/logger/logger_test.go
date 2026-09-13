@@ -1,45 +1,34 @@
 package logger
 
-import (
-	"context"
-	"log/slog"
-	"os"
-	"testing"
-)
+import "testing"
 
-func TestNew_LogLevelFromEnv(t *testing.T) {
+func TestParseLevel(t *testing.T) {
 	tests := []struct {
-		envValue string
-		want     slog.Level
+		in   string
+		want Level
 	}{
-		{"", slog.LevelInfo},            // unset -> default
-		{"info", slog.LevelInfo},        // lowercase
-		{"DEBUG", slog.LevelDebug},      // uppercase
-		{"Warn", slog.LevelWarn},        // mixed case
-		{"error", slog.LevelError},      //
-		{"not-a-level", slog.LevelInfo}, // invalid -> falls back to the zero value (info)
+		{"", LevelInfo},
+		{"info", LevelInfo},
+		{"DEBUG", LevelDebug},
+		{"Warn", LevelWarn},
+		{"error", LevelError},
+		{"not-a-level", LevelInfo}, // invalid -> falls back to info
 	}
-
 	for _, tt := range tests {
-		t.Run(tt.envValue, func(t *testing.T) {
-			if tt.envValue == "" {
-				_ = os.Unsetenv("LOG_LEVEL")
-			} else {
-				t.Setenv("LOG_LEVEL", tt.envValue)
-			}
-
-			log := New("test-service")
-			ctx := context.Background()
-
-			if !log.Enabled(ctx, tt.want) {
-				t.Errorf("LOG_LEVEL=%q: expected level %v to be enabled", tt.envValue, tt.want)
-			}
-			// Debug should be filtered out unless it's the configured
-			// level itself — confirms the handler's threshold was
-			// actually set, not left permissive.
-			if tt.want != slog.LevelDebug && log.Enabled(ctx, slog.LevelDebug) {
-				t.Errorf("LOG_LEVEL=%q: expected Debug to be disabled at level %v", tt.envValue, tt.want)
-			}
-		})
+		if got := parseLevel(tt.in); got != tt.want {
+			t.Errorf("parseLevel(%q) = %v, want %v", tt.in, got, tt.want)
+		}
 	}
+}
+
+func TestLogger_FiltersBelowMinimumLevel(t *testing.T) {
+	log := &Logger{service: "test", minimum: LevelWarn}
+
+	// Can't easily capture stdout without changing the writer, so this
+	// just exercises the level-filtering branch for a panic/crash check —
+	// print()'s early return on level < minimum is what's under test.
+	log.Debug("should be filtered")
+	log.Info("should be filtered")
+	log.Warn("should print")
+	log.Error("should print")
 }

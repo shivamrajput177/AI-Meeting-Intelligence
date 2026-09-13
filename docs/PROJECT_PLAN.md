@@ -110,7 +110,7 @@ flowchart TB
 | Layer | Choice | Notes |
 |---|---|---|
 | Language | Go 1.23+ | All services, workspace (`go.work`) monorepo |
-| HTTP framework | Fiber, standardized across every service (gateway and internal) | One framework, one middleware chain to learn/instrument, whether the caller is the browser or another service |
+| HTTP framework | none — standard library `net/http` + `http.ServeMux` (Go 1.22+ method/pattern routing), standardized across every service (gateway and internal) | One stdlib-only HTTP stack, no framework dependency to learn/version/audit; Go 1.22's `ServeMux` covers the routing (`"POST /meetings/{id}"`) this project actually needs |
 | Internal communication | REST/JSON over HTTP — same transport as the external API, no gRPC | See `microservices.md` §"Internal Communication" for the reasoning and trade-off |
 | External API | REST (hand-written, OpenAPI 3.1 spec maintained alongside it for docs/codegen) | Gateway reverse-proxies straight through to each service's REST routes — no protocol translation |
 | Primary DB | PostgreSQL 16 + `pgvector` | One cluster, **schema-per-service** logical isolation (see §5 trade-off) |
@@ -170,6 +170,22 @@ Full LLD for each is in [`architecture/microservices.md`](architecture/microserv
   plain versioned JSON (documented per-topic in `kafka-topics.md`), not
   generated from any schema file. Full reasoning in `microservices.md`
   §"Internal Communication."
+- **No web framework — standard library `net/http` only.** Started on
+  Fiber (an Express-style framework over `fasthttp`); replaced with
+  `http.ServeMux`'s Go 1.22+ method/pattern routing (`"POST
+  /meetings/{id}"`) once it became clear a framework was buying routing
+  sugar this project doesn't need, at the cost of a dependency (and
+  `fasthttp`'s whole transitive chain) to audit and version. A small
+  stdlib-only adapter (`httpserver.HandlerFunc`/`H`) preserves the
+  "handler returns an error, one place formats the response" pattern
+  Fiber gave for free. The reverse proxy at the gateway is
+  `net/http/httputil.ReverseProxy`, likewise stdlib.
+- **A hand-rolled logger, not `log/slog`.** Every service prints one
+  `key=value` line per event via plain `fmt`/`strings.Builder` — no
+  structured `Attr`/`Handler` type system, just the few fields
+  (level, service, msg, and call-specific pairs like status/duration/err)
+  this project actually needs. `log/slog` is a fine standard-library
+  choice at a larger scale; here it was overhead for a shape this simple.
 - **Reminders via a poll-based scheduler**, not Kafka native delay (Kafka has
   none). A `notification.action_item_reminders` table with `due_at` is polled
   every minute by Notification Service and emits `action-item.reminder-due.v1`.

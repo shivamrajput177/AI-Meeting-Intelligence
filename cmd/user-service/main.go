@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -27,13 +26,13 @@ func main() {
 
 	pool, err := dbx.NewPool(ctx, config.Env("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/meetingintel"))
 	if err != nil {
-		log.Error("connect to postgres", slog.Any("err", err))
+		log.Error("connect to postgres", "err", err)
 		os.Exit(1)
 	}
 	defer pool.Close()
 
 	if err := dbx.RunMigrations(ctx, pool, "user", usermigrations.FS, "."); err != nil {
-		log.Error("run migrations", slog.Any("err", err))
+		log.Error("run migrations", "err", err)
 		os.Exit(1)
 	}
 
@@ -45,13 +44,13 @@ func main() {
 		usecase.NewLookupByEmailUseCase(repo),
 	)
 
-	app := httpserver.New("user-service", log)
-	userhttp.RegisterRoutes(app, handler, config.Env("INTERNAL_SERVICE_TOKEN", "dev-internal-token"))
+	srv := httpserver.New("user-service", log)
+	userhttp.RegisterRoutes(srv.Mux, handler, config.Env("INTERNAL_SERVICE_TOKEN", "dev-internal-token"))
 
 	addr := ":" + config.Env("PORT", "8081")
-	log.Info("starting", slog.String("addr", addr))
-	if err := app.Listen(addr); err != nil {
-		log.Error("server stopped", slog.Any("err", err))
+	log.Info("starting", "addr", addr)
+	if err := srv.ListenAndServe(addr); err != nil {
+		log.Error("server stopped", "err", err)
 		os.Exit(1)
 	}
 }

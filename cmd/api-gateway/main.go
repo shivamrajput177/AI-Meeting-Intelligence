@@ -3,7 +3,6 @@
 package main
 
 import (
-	"log/slog"
 	"os"
 
 	"github.com/shivamrajput177/ai-meeting-intelligence/internal/platform/config"
@@ -19,8 +18,8 @@ func main() {
 	rdb := redisx.NewClient(config.Env("REDIS_ADDR", "localhost:6379"))
 	jwtSecret := []byte(config.Env("JWT_SIGNING_KEY", "dev-only-signing-key-change-me"))
 
-	app := httpserver.New("api-gateway", log)
-	routes.Register(app, routes.ServiceURLs{
+	srv := httpserver.New("api-gateway", log)
+	routes.Register(srv.Mux, routes.ServiceURLs{
 		Auth:    config.Env("AUTH_SERVICE_URL", "http://localhost:8080"),
 		User:    config.Env("USER_SERVICE_URL", "http://localhost:8081"),
 		Org:     config.Env("ORG_SERVICE_URL", "http://localhost:8082"),
@@ -28,9 +27,9 @@ func main() {
 	}, jwtSecret, rdb, log)
 
 	addr := ":" + config.Env("PORT", "8000")
-	log.Info("starting", slog.String("addr", addr))
-	if err := app.Listen(addr); err != nil {
-		log.Error("server stopped", slog.Any("err", err))
+	log.Info("starting", "addr", addr)
+	if err := srv.ListenAndServe(addr); err != nil {
+		log.Error("server stopped", "err", err)
 		os.Exit(1)
 	}
 }

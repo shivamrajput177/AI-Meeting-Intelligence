@@ -5,11 +5,11 @@
 package routes
 
 import (
-	"log/slog"
+	"net/http"
 
-	"github.com/gofiber/fiber/v2"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/shivamrajput177/ai-meeting-intelligence/internal/platform/logger"
 	"github.com/shivamrajput177/ai-meeting-intelligence/internal/routes/middleware"
 	"github.com/shivamrajput177/ai-meeting-intelligence/internal/routes/proxy"
 )
@@ -22,12 +22,13 @@ type ServiceURLs struct {
 }
 
 // Register mounts every /api/v1/... route documented in
-// docs/architecture/api-spec.md, split into a public group (Auth Service
-// — a caller has no JWT yet by definition) and a JWT-protected group
-// (everything else).
-func Register(app *fiber.App, urls ServiceURLs, jwtSecret []byte, rdb *redis.Client, log *slog.Logger) {
-	api := app.Group("/api/v1")
-
+// docs/architecture/api-spec.md onto mux — a public set (Auth Service — a
+// caller has no JWT yet by definition) and a JWT-protected set (everything
+// else). Each pattern is registered without a method prefix so it matches
+// every HTTP method on that path (the gateway doesn't care which method a
+// route uses, only the target service does — the net/http.ServeMux
+// equivalent of Fiber's .All()).
+func Register(mux *http.ServeMux, urls ServiceURLs, jwtSecret []byte, rdb *redis.Client, log *logger.Logger) {
 	// Token-bucket limits below are expressed as (burst capacity, steady
 	// refill rate) — e.g. signup allows up to 10 back-to-back attempts,
 	// then refills at 10-per-minute after that, rather than a hard reset
@@ -39,26 +40,31 @@ func Register(app *fiber.App, urls ServiceURLs, jwtSecret []byte, rdb *redis.Cli
 		resetBurst, resetPerMinute   = 10, 10.0
 	)
 
-	public := api.Group("")
-	public.Post("/auth/signup", middleware.RateLimit(rdb, "auth-signup", signupBurst, signupPerMinute/60), proxy.ForwardTo(urls.Auth))
-	public.Post("/auth/login", middleware.RateLimit(rdb, "auth-login", loginBurst, loginPerMinute/60), proxy.ForwardTo(urls.Auth))
-	public.Post("/auth/refresh", proxy.ForwardTo(urls.Auth))
-	public.Post("/auth/logout", proxy.ForwardTo(urls.Auth))
-	public.Post("/auth/password/reset-request", middleware.RateLimit(rdb, "auth-reset", resetBurst, resetPerMinute/60), proxy.ForwardTo(urls.Auth))
-	public.Post("/auth/password/reset-confirm", proxy.ForwardTo(urls.Auth))
+	mux.Handle("/api/v1/auth/signup",
+		middleware.RateLimit(rdb, "auth-signup", signupBurst, signupPerMinute/60)(proxy.ForwardTo(urls.Auth)))
+	mux.Handle("/api/v1/auth/login",
+		middleware.RateLimit(rdb, "auth-login", loginBurst, loginPerMinute/60)(proxy.ForwardTo(urls.Auth)))
+	mux.Handle("/api/v1/auth/refresh", proxy.ForwardTo(urls.Auth))
+	mux.Handle("/api/v1/auth/logout", proxy.ForwardTo(urls.Auth))
+	mux.Handle("/api/v1/auth/password/reset-request",
+		middleware.RateLimit(rdb, "auth-reset", resetBurst, resetPerMinute/60)(proxy.ForwardTo(urls.Auth)))
+	mux.Handle("/api/v1/auth/password/reset-confirm", proxy.ForwardTo(urls.Auth))
 
-	protected := api.Group("", middleware.Auth(jwtSecret, rdb, log))
+	auth := middleware.Auth(jwtSecret, rdb, log)
+	protect := func(pattern, target string) {
+		mux.Handle(pattern, auth(proxy.ForwardTo(target)))
+	}
 
-	protected.All("/users/me", proxy.ForwardTo(urls.User))
-	protected.All("/orgs/:orgId/users/:userId", proxy.ForwardTo(urls.User))
+	protect("/api/v1/users/me", urls.User)
+	protect("/api/v1/orgs/{orgId}/users/{userId}", urls.User)
 
-	protected.All("/orgs", proxy.ForwardTo(urls.Org))
-	protected.All("/orgs/:orgId", proxy.ForwardTo(urls.Org))
-	protected.All("/orgs/:orgId/settings", proxy.ForwardTo(urls.Org))
-	protected.All("/orgs/:orgId/usage", proxy.ForwardTo(urls.Org))
+	protect("/api/v1/orgs", urls.Org)
+	protect("/api/v1/orgs/{orgId}", urls.Org)
+	protect("/api/v1/orgs/{orgId}/settings", urls.Org)
+	protect("/api/v1/orgs/{orgId}/usage", urls.Org)
 
-	protected.All("/meetings", proxy.ForwardTo(urls.Meeting))
-	protected.All("/meetings/:id", proxy.ForwardTo(urls.Meeting))
-	protected.All("/meetings/:id/complete-upload", proxy.ForwardTo(urls.Meeting))
-	protected.All("/meetings/:id/status", proxy.ForwardTo(urls.Meeting))
+	protect("/api/v1/meetings", urls.Meeting)
+	protect("/api/v1/meetings/{id}", urls.Meeting)
+	protect("/api/v1/meetings/{id}/complete-upload", urls.Meeting)
+	protect("/api/v1/meetings/{id}/status", urls.Meeting)
 }

@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -29,13 +28,13 @@ func main() {
 
 	pool, err := dbx.NewPool(ctx, config.Env("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/meetingintel"))
 	if err != nil {
-		log.Error("connect to postgres", slog.Any("err", err))
+		log.Error("connect to postgres", "err", err)
 		os.Exit(1)
 	}
 	defer pool.Close()
 
 	if err := dbx.RunMigrations(ctx, pool, "auth", authmigrations.FS, "."); err != nil {
-		log.Error("run migrations", slog.Any("err", err))
+		log.Error("run migrations", "err", err)
 		os.Exit(1)
 	}
 
@@ -61,13 +60,13 @@ func main() {
 		usecase.NewConfirmPasswordResetUseCase(resetRepo, credentialsRepo),
 	)
 
-	app := httpserver.New("auth-service", log)
-	authhttp.RegisterRoutes(app, handler)
+	srv := httpserver.New("auth-service", log)
+	authhttp.RegisterRoutes(srv.Mux, handler)
 
 	addr := ":" + config.Env("PORT", "8080")
-	log.Info("starting", slog.String("addr", addr))
-	if err := app.Listen(addr); err != nil {
-		log.Error("server stopped", slog.Any("err", err))
+	log.Info("starting", "addr", addr)
+	if err := srv.ListenAndServe(addr); err != nil {
+		log.Error("server stopped", "err", err)
 		os.Exit(1)
 	}
 }

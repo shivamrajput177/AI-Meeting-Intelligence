@@ -5,11 +5,11 @@
 package http
 
 import (
+	"net/http"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
-
 	"github.com/shivamrajput177/ai-meeting-intelligence/internal/platform/apperr"
+	"github.com/shivamrajput177/ai-meeting-intelligence/internal/platform/httpserver"
 	"github.com/shivamrajput177/ai-meeting-intelligence/internal/platform/reqctx"
 	"github.com/shivamrajput177/ai-meeting-intelligence/internal/usersvc/domain"
 	"github.com/shivamrajput177/ai-meeting-intelligence/internal/usersvc/usecase"
@@ -64,18 +64,19 @@ type createUserRequest struct {
 	Role  string `json:"role"`
 }
 
-func (h *Handler) CreateUser(c *fiber.Ctx) error {
+func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) error {
 	var req createUserRequest
-	if err := c.BodyParser(&req); err != nil {
-		return apperr.BadRequest("invalid request body")
+	if err := httpserver.DecodeJSON(r, &req); err != nil {
+		return err
 	}
-	user, err := h.createUser.Execute(c.UserContext(), usecase.CreateUserInput{
+	user, err := h.createUser.Execute(r.Context(), usecase.CreateUserInput{
 		OrgID: req.OrgID, Email: req.Email, Name: req.Name, Role: req.Role,
 	})
 	if err != nil {
 		return err
 	}
-	return c.Status(fiber.StatusCreated).JSON(toUserResponse(user))
+	httpserver.JSON(w, http.StatusCreated, toUserResponse(user))
+	return nil
 }
 
 type lookupResponse struct {
@@ -87,12 +88,12 @@ type lookupResponse struct {
 	} `json:"matches"`
 }
 
-func (h *Handler) LookupByEmail(c *fiber.Ctx) error {
-	email := c.Query("email")
+func (h *Handler) LookupByEmail(w http.ResponseWriter, r *http.Request) error {
+	email := r.URL.Query().Get("email")
 	if email == "" {
 		return apperr.BadRequest("email query parameter is required")
 	}
-	matches, err := h.lookupByEmail.Execute(c.UserContext(), email)
+	matches, err := h.lookupByEmail.Execute(r.Context(), email)
 	if err != nil {
 		return err
 	}
@@ -105,18 +106,20 @@ func (h *Handler) LookupByEmail(c *fiber.Ctx) error {
 			Status string `json:"status"`
 		}{UserID: m.UserID, OrgID: m.OrgID, Role: m.Role, Status: m.Status})
 	}
-	return c.JSON(resp)
+	httpserver.JSON(w, http.StatusOK, resp)
+	return nil
 }
 
 // --- routes reachable via the gateway ---
 
-func (h *Handler) GetMe(c *fiber.Ctx) error {
-	orgID, userID := reqctx.OrgID(c.UserContext()), reqctx.UserID(c.UserContext())
-	user, err := h.getUser.Execute(c.UserContext(), orgID, userID)
+func (h *Handler) GetMe(w http.ResponseWriter, r *http.Request) error {
+	orgID, userID := reqctx.OrgID(r.Context()), reqctx.UserID(r.Context())
+	user, err := h.getUser.Execute(r.Context(), orgID, userID)
 	if err != nil {
 		return err
 	}
-	return c.JSON(toUserResponse(user))
+	httpserver.JSON(w, http.StatusOK, toUserResponse(user))
+	return nil
 }
 
 type updateMeRequest struct {
@@ -124,32 +127,34 @@ type updateMeRequest struct {
 	AvatarURL string `json:"avatarUrl"`
 }
 
-func (h *Handler) UpdateMe(c *fiber.Ctx) error {
+func (h *Handler) UpdateMe(w http.ResponseWriter, r *http.Request) error {
 	var req updateMeRequest
-	if err := c.BodyParser(&req); err != nil {
-		return apperr.BadRequest("invalid request body")
+	if err := httpserver.DecodeJSON(r, &req); err != nil {
+		return err
 	}
-	orgID, userID := reqctx.OrgID(c.UserContext()), reqctx.UserID(c.UserContext())
-	user, err := h.updateProfile.Execute(c.UserContext(), usecase.UpdateProfileInput{
+	orgID, userID := reqctx.OrgID(r.Context()), reqctx.UserID(r.Context())
+	user, err := h.updateProfile.Execute(r.Context(), usecase.UpdateProfileInput{
 		OrgID: orgID, UserID: userID, Name: req.Name, AvatarURL: req.AvatarURL,
 	})
 	if err != nil {
 		return err
 	}
-	return c.JSON(toUserResponse(user))
+	httpserver.JSON(w, http.StatusOK, toUserResponse(user))
+	return nil
 }
 
 // GetUser lets another service (or the gateway, for a member viewing a
 // teammate) fetch one user by id — see
 // docs/architecture/microservices.md §3 ("used internally too").
-func (h *Handler) GetUser(c *fiber.Ctx) error {
-	orgID := c.Params("orgId")
-	if callerOrg := reqctx.OrgID(c.UserContext()); callerOrg != "" && callerOrg != orgID {
+func (h *Handler) GetUser(w http.ResponseWriter, r *http.Request) error {
+	orgID := r.PathValue("orgId")
+	if callerOrg := reqctx.OrgID(r.Context()); callerOrg != "" && callerOrg != orgID {
 		return apperr.Forbidden("cannot access another organization's users")
 	}
-	user, err := h.getUser.Execute(c.UserContext(), orgID, c.Params("userId"))
+	user, err := h.getUser.Execute(r.Context(), orgID, r.PathValue("userId"))
 	if err != nil {
 		return err
 	}
-	return c.JSON(toUserResponse(user))
+	httpserver.JSON(w, http.StatusOK, toUserResponse(user))
+	return nil
 }

@@ -5,13 +5,13 @@
 package http
 
 import (
+	"net/http"
 	"time"
-
-	"github.com/gofiber/fiber/v2"
 
 	"github.com/shivamrajput177/ai-meeting-intelligence/internal/orgsvc/domain"
 	"github.com/shivamrajput177/ai-meeting-intelligence/internal/orgsvc/usecase"
 	"github.com/shivamrajput177/ai-meeting-intelligence/internal/platform/apperr"
+	"github.com/shivamrajput177/ai-meeting-intelligence/internal/platform/httpserver"
 	"github.com/shivamrajput177/ai-meeting-intelligence/internal/platform/reqctx"
 )
 
@@ -40,38 +40,40 @@ type orgResponse struct {
 // CreateOrg is called internally by Auth Service during signup (see
 // docs/ROADMAP.md Phase 1 — there's no public "create a second org for an
 // existing user" flow yet).
-func (h *Handler) CreateOrg(c *fiber.Ctx) error {
+func (h *Handler) CreateOrg(w http.ResponseWriter, r *http.Request) error {
 	var req createOrgRequest
-	if err := c.BodyParser(&req); err != nil {
-		return apperr.BadRequest("invalid request body")
+	if err := httpserver.DecodeJSON(r, &req); err != nil {
+		return err
 	}
 
-	org, err := h.createOrg.Execute(c.UserContext(), usecase.CreateOrgInput{Name: req.Name})
+	org, err := h.createOrg.Execute(r.Context(), usecase.CreateOrgInput{Name: req.Name})
 	if err != nil {
 		return err
 	}
-	return c.Status(fiber.StatusCreated).JSON(toOrgResponse(org))
+	httpserver.JSON(w, http.StatusCreated, toOrgResponse(org))
+	return nil
 }
 
 // GetOrg is reachable both via the gateway (a member viewing their own
 // org) and directly from other services that need org metadata (e.g.
 // Notification Service reading integration config, in a later phase).
-func (h *Handler) GetOrg(c *fiber.Ctx) error {
-	orgID := c.Params("orgId")
+func (h *Handler) GetOrg(w http.ResponseWriter, r *http.Request) error {
+	orgID := r.PathValue("orgId")
 
 	// Gateway-forwarded requests carry the caller's org in context; a
 	// member may only ever fetch their own org. Direct internal calls
 	// (no reqctx org set) skip this check — they're already
 	// token-authenticated by RequireInternalToken.
-	if callerOrg := reqctx.OrgID(c.UserContext()); callerOrg != "" && callerOrg != orgID {
+	if callerOrg := reqctx.OrgID(r.Context()); callerOrg != "" && callerOrg != orgID {
 		return apperr.Forbidden("cannot access another organization")
 	}
 
-	org, err := h.getOrg.Execute(c.UserContext(), orgID)
+	org, err := h.getOrg.Execute(r.Context(), orgID)
 	if err != nil {
 		return err
 	}
-	return c.JSON(toOrgResponse(org))
+	httpserver.JSON(w, http.StatusOK, toOrgResponse(org))
+	return nil
 }
 
 func toOrgResponse(o *domain.Organization) orgResponse {

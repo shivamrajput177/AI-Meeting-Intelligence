@@ -6,10 +6,9 @@
 package apperr
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
-
-	"github.com/gofiber/fiber/v2"
 )
 
 // Error is a typed application error carrying an HTTP status and a stable
@@ -82,17 +81,29 @@ func AsError(err error) *Error {
 	return Internal("unexpected error")
 }
 
-// FiberHandler is the single place an HTTP handler turns a usecase error
-// into a response — every delivery/http package in this repo calls this
-// instead of writing its own error JSON.
-func FiberHandler(c *fiber.Ctx, err error) error {
+// errorEnvelope is the wire shape from this package's own doc comment —
+// named so both Write (here) and httpclient's response decoding (which
+// reads another service's error response back into Go) agree on the
+// field names in one place.
+type errorEnvelope struct {
+	Error struct {
+		Code      string `json:"code"`
+		Message   string `json:"message"`
+		RequestID string `json:"requestId"`
+	} `json:"error"`
+}
+
+// Write is the single place an HTTP handler turns a usecase error into a
+// response — every delivery/http package in this repo calls this instead
+// of writing its own error JSON.
+func Write(w http.ResponseWriter, requestID string, err error) {
 	appErr := AsError(err)
-	requestID := c.Locals("requestid")
-	return c.Status(appErr.Status).JSON(fiber.Map{
-		"error": fiber.Map{
-			"code":      appErr.Code,
-			"message":   appErr.Message,
-			"requestId": requestID,
-		},
-	})
+	var env errorEnvelope
+	env.Error.Code = appErr.Code
+	env.Error.Message = appErr.Message
+	env.Error.RequestID = requestID
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(appErr.Status)
+	_ = json.NewEncoder(w).Encode(env)
 }

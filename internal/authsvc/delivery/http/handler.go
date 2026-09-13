@@ -4,10 +4,10 @@
 package http
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"net/http"
 
 	"github.com/shivamrajput177/ai-meeting-intelligence/internal/authsvc/usecase"
-	"github.com/shivamrajput177/ai-meeting-intelligence/internal/platform/apperr"
+	"github.com/shivamrajput177/ai-meeting-intelligence/internal/platform/httpserver"
 )
 
 type Handler struct {
@@ -50,18 +50,19 @@ type signupRequest struct {
 	Password string `json:"password"`
 }
 
-func (h *Handler) Signup(c *fiber.Ctx) error {
+func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) error {
 	var req signupRequest
-	if err := c.BodyParser(&req); err != nil {
-		return apperr.BadRequest("invalid request body")
+	if err := httpserver.DecodeJSON(r, &req); err != nil {
+		return err
 	}
-	tokens, err := h.signup.Execute(c.Context(), usecase.SignupInput{
+	tokens, err := h.signup.Execute(r.Context(), usecase.SignupInput{
 		OrgName: req.OrgName, Email: req.Email, Name: req.Name, Password: req.Password,
 	})
 	if err != nil {
 		return err
 	}
-	return c.Status(fiber.StatusCreated).JSON(toTokenResponse(tokens))
+	httpserver.JSON(w, http.StatusCreated, toTokenResponse(tokens))
+	return nil
 }
 
 type loginRequest struct {
@@ -69,16 +70,17 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
-func (h *Handler) Login(c *fiber.Ctx) error {
+func (h *Handler) Login(w http.ResponseWriter, r *http.Request) error {
 	var req loginRequest
-	if err := c.BodyParser(&req); err != nil {
-		return apperr.BadRequest("invalid request body")
+	if err := httpserver.DecodeJSON(r, &req); err != nil {
+		return err
 	}
-	tokens, err := h.login.Execute(c.Context(), usecase.LoginInput{Email: req.Email, Password: req.Password})
+	tokens, err := h.login.Execute(r.Context(), usecase.LoginInput{Email: req.Email, Password: req.Password})
 	if err != nil {
 		return err
 	}
-	return c.JSON(toTokenResponse(tokens))
+	httpserver.JSON(w, http.StatusOK, toTokenResponse(tokens))
+	return nil
 }
 
 type refreshRequest struct {
@@ -87,18 +89,19 @@ type refreshRequest struct {
 	Role         string `json:"role"`
 }
 
-func (h *Handler) Refresh(c *fiber.Ctx) error {
+func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) error {
 	var req refreshRequest
-	if err := c.BodyParser(&req); err != nil {
-		return apperr.BadRequest("invalid request body")
+	if err := httpserver.DecodeJSON(r, &req); err != nil {
+		return err
 	}
-	tokens, err := h.refresh.Execute(c.Context(), usecase.RefreshInput{
+	tokens, err := h.refresh.Execute(r.Context(), usecase.RefreshInput{
 		OrgID: req.OrgID, RefreshToken: req.RefreshToken, Role: req.Role,
 	})
 	if err != nil {
 		return err
 	}
-	return c.JSON(toTokenResponse(tokens))
+	httpserver.JSON(w, http.StatusOK, toTokenResponse(tokens))
+	return nil
 }
 
 type logoutRequest struct {
@@ -106,15 +109,16 @@ type logoutRequest struct {
 	RefreshToken string `json:"refreshToken"`
 }
 
-func (h *Handler) Logout(c *fiber.Ctx) error {
+func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) error {
 	var req logoutRequest
-	if err := c.BodyParser(&req); err != nil {
-		return apperr.BadRequest("invalid request body")
-	}
-	if err := h.logout.Execute(c.Context(), usecase.LogoutInput{OrgID: req.OrgID, RefreshToken: req.RefreshToken}); err != nil {
+	if err := httpserver.DecodeJSON(r, &req); err != nil {
 		return err
 	}
-	return c.SendStatus(fiber.StatusNoContent)
+	if err := h.logout.Execute(r.Context(), usecase.LogoutInput{OrgID: req.OrgID, RefreshToken: req.RefreshToken}); err != nil {
+		return err
+	}
+	httpserver.NoContent(w)
+	return nil
 }
 
 type resetRequestRequest struct {
@@ -128,16 +132,17 @@ type resetRequestResponse struct {
 	DevToken string `json:"devToken,omitempty"`
 }
 
-func (h *Handler) RequestPasswordReset(c *fiber.Ctx) error {
+func (h *Handler) RequestPasswordReset(w http.ResponseWriter, r *http.Request) error {
 	var req resetRequestRequest
-	if err := c.BodyParser(&req); err != nil {
-		return apperr.BadRequest("invalid request body")
+	if err := httpserver.DecodeJSON(r, &req); err != nil {
+		return err
 	}
-	devToken, err := h.requestReset.Execute(c.Context(), req.Email)
+	devToken, err := h.requestReset.Execute(r.Context(), req.Email)
 	if err != nil {
 		return err
 	}
-	return c.JSON(resetRequestResponse{DevToken: devToken})
+	httpserver.JSON(w, http.StatusOK, resetRequestResponse{DevToken: devToken})
+	return nil
 }
 
 type resetConfirmRequest struct {
@@ -145,13 +150,14 @@ type resetConfirmRequest struct {
 	NewPassword string `json:"newPassword"`
 }
 
-func (h *Handler) ConfirmPasswordReset(c *fiber.Ctx) error {
+func (h *Handler) ConfirmPasswordReset(w http.ResponseWriter, r *http.Request) error {
 	var req resetConfirmRequest
-	if err := c.BodyParser(&req); err != nil {
-		return apperr.BadRequest("invalid request body")
-	}
-	if err := h.confirmReset.Execute(c.Context(), req.Token, req.NewPassword); err != nil {
+	if err := httpserver.DecodeJSON(r, &req); err != nil {
 		return err
 	}
-	return c.SendStatus(fiber.StatusNoContent)
+	if err := h.confirmReset.Execute(r.Context(), req.Token, req.NewPassword); err != nil {
+		return err
+	}
+	httpserver.NoContent(w)
+	return nil
 }

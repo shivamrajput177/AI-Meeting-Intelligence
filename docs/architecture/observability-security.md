@@ -25,19 +25,26 @@
   5m, Ollama/whisper.cpp p99 latency breach, DLQ depth > 0, disk/PVC > 80%.
 
 ### Logging (Loki)
-- Structured JSON logs via `log/slog` (Go 1.21+), one line per event, fields:
-  `ts, level, service, trace_id, span_id, org_id, msg, ...`.
+- One `key=value` (logfmt-style) line per event, hand-built by
+  `internal/platform/logger` — no `log/slog`, no JSON encoder; see
+  `PROJECT_PLAN.md` §5 for why. Fields: `time, level, service, msg, ...`
+  plus whatever key/value pairs the call site adds (`status`, `duration`,
+  `err`, `request_id`). Loki parses this natively via LogQL's `| logfmt`
+  stage — logfmt isn't a downgrade from JSON for this purpose, both are
+  first-class Loki input formats.
 - Shipped via Promtail (or the OTel Collector's log pipeline) to Loki;
-  Grafana "Explore" correlates a log line's `trace_id` directly to its Tempo
-  trace via a derived field link.
+  Grafana "Explore" correlates a log line's `request_id` (and, once
+  tracing is wired in Phase 6, `trace_id`) directly to its Tempo trace via
+  a derived field link.
 - No PII/secrets in logs — password hashes, tokens, and raw transcript text
   are never logged; a lint rule (custom `golangci-lint` config) flags common
   offenders.
 
 ### Tracing (OpenTelemetry + Tempo)
-- OTel Go SDK auto-instruments Fiber's HTTP middleware (both the gateway's
-  inbound requests and every service's own inbound routes — internal calls
-  are traced exactly like external ones, since they're the same transport),
+- OTel Go SDK auto-instruments the stdlib `net/http` middleware chain in
+  `internal/platform/httpserver` (both the gateway's inbound requests and
+  every service's own inbound routes — internal calls are traced exactly
+  like external ones, since they're the same transport),
   the Postgres driver (`otelpgx`), the Kafka producer/consumer (manual span
   + header propagation per the flow in `kafka-topics.md`), and outbound
   HTTP to Ollama/whisper.cpp/Jira/Slack/other services.

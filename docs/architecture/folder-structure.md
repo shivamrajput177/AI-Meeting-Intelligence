@@ -54,14 +54,14 @@ localized change, not a sign the current layout was wrong for now.
 ├── internal/
 │   ├── platform/                     # shared infra, imported by every service
 │   │   ├── config/                   # env var loading with defaults
-│   │   ├── logger/                   # slog JSON setup
+│   │   ├── logger/                   # hand-rolled key=value logger (no log/slog — see PROJECT_PLAN.md §5)
 │   │   ├── apperr/                   # typed app errors -> HTTP status + the {"error":{...}} envelope
 │   │   ├── jwtutil/                  # access-token sign/verify, opaque refresh-token generation/hashing
 │   │   ├── passwordutil/             # argon2id hash/verify
 │   │   ├── reqctx/                   # context accessors for org/user/role/request-id + the header names they travel under
 │   │   ├── dbx/                      # pgx pool, embedded-SQL migration runner, RLS tenant-context helper (+ the bypass-RLS escape hatch)
 │   │   ├── redisx/                   # client wrapper, revocation cache, fixed-window rate limiter
-│   │   ├── httpserver/               # Fiber bootstrap + shared middleware (request id, recovery, access log, header->context), internal-token guard
+│   │   ├── httpserver/               # net/http + ServeMux bootstrap (no web framework) + shared middleware (request id, recovery, access log, header->context), internal-token guard
 │   │   └── httpclient/               # shared client for calling another service's REST API: timeout, one retry, header propagation, error-envelope mapping
 │   │
 │   ├── authsvc/            (domain/usecase/repository/delivery/client — client/ holds the OrgClient/UserClient adapters)

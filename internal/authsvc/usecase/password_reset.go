@@ -2,7 +2,6 @@ package usecase
 
 import (
 	"context"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/shivamrajput177/ai-meeting-intelligence/internal/authsvc/domain"
 	"github.com/shivamrajput177/ai-meeting-intelligence/internal/platform/apperr"
 	"github.com/shivamrajput177/ai-meeting-intelligence/internal/platform/jwtutil"
+	"github.com/shivamrajput177/ai-meeting-intelligence/internal/platform/logger"
 	"github.com/shivamrajput177/ai-meeting-intelligence/internal/platform/passwordutil"
 )
 
@@ -25,11 +25,11 @@ const resetTokenTTL = 1 * time.Hour
 type RequestPasswordResetUseCase struct {
 	userClient     domain.UserClient
 	resetRepo      domain.PasswordResetRepository
-	log            *slog.Logger
+	log            *logger.Logger
 	devExposeToken bool
 }
 
-func NewRequestPasswordResetUseCase(userClient domain.UserClient, resetRepo domain.PasswordResetRepository, log *slog.Logger, devExposeToken bool) *RequestPasswordResetUseCase {
+func NewRequestPasswordResetUseCase(userClient domain.UserClient, resetRepo domain.PasswordResetRepository, log *logger.Logger, devExposeToken bool) *RequestPasswordResetUseCase {
 	return &RequestPasswordResetUseCase{userClient: userClient, resetRepo: resetRepo, log: log, devExposeToken: devExposeToken}
 }
 
@@ -60,8 +60,7 @@ func (uc *RequestPasswordResetUseCase) Execute(ctx context.Context, email string
 		return "", apperr.Internal("store reset token").Wrap(err)
 	}
 
-	uc.log.Info("password reset requested",
-		slog.String("user_id", userID), slog.String("dev_reset_token", raw))
+	uc.log.Info("password reset requested", "user_id", userID, "dev_reset_token", raw)
 
 	if uc.devExposeToken {
 		return raw, nil

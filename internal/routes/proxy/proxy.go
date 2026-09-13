@@ -1,14 +1,15 @@
-// Package proxy is the API Gateway's reverse-proxy layer. There is no
-// protocol translation here — the gateway forwards the exact REST request
-// it received to the target service's own REST API, per
+// Package proxy is the API Gateway's reverse-proxy layer, built on the
+// standard library's net/http/httputil.ReverseProxy. There is no protocol
+// translation here — the gateway forwards the exact REST request it
+// received to the target service's own REST API, per
 // docs/architecture/microservices.md §"Internal Communication".
 package proxy
 
 import (
+	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"strings"
-
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/proxy"
 )
 
 // apiPrefix is stripped before forwarding — the gateway exposes
@@ -18,10 +19,22 @@ import (
 const apiPrefix = "/api/v1"
 
 // ForwardTo returns a handler that proxies the current request to
-// baseURL, preserving path, query string, method, headers, and body.
-func ForwardTo(baseURL string) fiber.Handler {
-	return func(c *fiber.Ctx) error {
-		path := strings.TrimPrefix(c.OriginalURL(), apiPrefix)
-		return proxy.Do(c, baseURL+path)
+// baseURL, preserving method, headers, query string, and body — anything
+// httputil.ReverseProxy already does for you. baseURL is one of this
+// project's own service URLs (from config), so a parse failure here is a
+// startup misconfiguration, not something to recover from per-request.
+func ForwardTo(baseURL string) http.Handler {
+	target, err := url.Parse(baseURL)
+	if err != nil {
+		panic("proxy: invalid service base URL " + baseURL + ": " + err.Error())
+	}
+
+	return &httputil.ReverseProxy{
+		Director: func(r *http.Request) {
+			r.URL.Scheme = target.Scheme
+			r.URL.Host = target.Host
+			r.URL.Path = strings.TrimPrefix(r.URL.Path, apiPrefix)
+			r.Host = target.Host
+		},
 	}
 }
