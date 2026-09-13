@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	log := logger.New("api-gateway", logger.WithLevel(logger.ParseLevel(config.Env("LOG_LEVEL", "info"))))
+	log := logger.New("api-gateway", logger.ParseLevel(config.Env("LOG_LEVEL", "info")))
 
 	rdb := redisx.NewClient(config.Env("REDIS_ADDR", "localhost:6379"))
 	jwtSecret := []byte(config.Env("JWT_SIGNING_KEY", "dev-only-signing-key-change-me"))
