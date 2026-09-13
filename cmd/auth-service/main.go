@@ -22,7 +22,7 @@ import (
 )
 
 func main() {
-	log := logger.New("auth-service")
+	log := logger.New("auth-service", logger.WithLevel(logger.ParseLevel(config.Env("LOG_LEVEL", "info"))))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

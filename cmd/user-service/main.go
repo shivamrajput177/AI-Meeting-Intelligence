@@ -20,7 +20,7 @@ import (
 )
 
 func main() {
-	log := logger.New("user-service")
+	log := logger.New("user-service", logger.WithLevel(logger.ParseLevel(config.Env("LOG_LEVEL", "info"))))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

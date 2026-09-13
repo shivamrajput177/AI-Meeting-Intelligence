@@ -21,7 +21,7 @@ import (
 )
 
 func main() {
-	log := logger.New("meeting-service")
+	log := logger.New("meeting-service", logger.WithLevel(logger.ParseLevel(config.Env("LOG_LEVEL", "info"))))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
