@@ -3,7 +3,11 @@
 # for the production/Kubernetes shape this grows into in Phase 5.
 #
 # Quickstart: `docker compose up --build`, then see README.md for the
-# curl/Postman flow (signup -> login -> create org -> upload).
+# curl/Postman flow (signup -> login -> create org -> upload). Containers
+# read configs/docker/<service>.json (compose-network hostnames, checked
+# into git since it's all dev-only values) rather than configs/<service>.json,
+# which is for running a binary directly on the host instead — see
+# "Local development without Docker" in README.md.
 services:
   postgres:
     # pgvector/pgvector, not plain postgres: Phase 3 needs the pgvector
@@ -38,7 +42,7 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      - "9000:9000" # S3 API - also what MINIO_PUBLIC_ENDPOINT points browsers at
+      - "9000:9000" # S3 API - also what minio_public_endpoint points browsers at
       - "9001:9001" # web console
     volumes: ["miniodata:/data"]
     healthcheck:
@@ -49,38 +53,24 @@ services:
 
   organization-service:
     build: { context: ., args: { SERVICE: organization-service } }
-    # Every service listens on container-internal port 8080 (overriding
-    # each cmd's own PORT default, which only matters for running a
-    # binary directly on the host without compose) so one Dockerfile/one
-    # EXPOSE works for all of them; the host-side port in each "ports:"
-    # mapping below is what varies.
-    environment: &common-env
-      PORT: "8080"
-      DATABASE_URL: postgres://postgres:postgres@postgres:5432/meetingintel
-      INTERNAL_SERVICE_TOKEN: dev-internal-token
+    volumes:
+      - "./configs/docker/organization-service.json:/app/configs/organization-service.json:ro"
     ports: ["8082:8080"]
     depends_on:
       postgres: { condition: service_healthy }
 
   user-service:
     build: { context: ., args: { SERVICE: user-service } }
-    environment: *common-env
+    volumes:
+      - "./configs/docker/user-service.json:/app/configs/user-service.json:ro"
     ports: ["8081:8080"]
     depends_on:
       postgres: { condition: service_healthy }
 
   auth-service:
     build: { context: ., args: { SERVICE: auth-service } }
-    environment:
-      <<: *common-env
-      JWT_SIGNING_KEY: dev-only-signing-key-change-me
-      ORG_SERVICE_URL: http://organization-service:8080
-      USER_SERVICE_URL: http://user-service:8080
-      # Exposes the password-reset token in the API response instead of
-      # emailing it — there's no Notification Service until Phase 4. See
-      # usecase.RequestPasswordResetUseCase's doc comment. Never set this
-      # in a real deployment.
-      AUTH_DEV_EXPOSE_RESET_TOKEN: "true"
+    volumes:
+      - "./configs/docker/auth-service.json:/app/configs/auth-service.json:ro"
     ports: ["8080:8080"]
     depends_on:
       postgres: { condition: service_healthy }
@@ -89,17 +79,8 @@ services:
 
   meeting-service:
     build: { context: ., args: { SERVICE: meeting-service } }
-    environment:
-      <<: *common-env
-      # See internal/meetingsvc/storage/minio's doc comment for why these
-      # are two different hostnames: this service reaches MinIO over the
-      # compose network, but presigned upload URLs go to a browser on the
-      # host machine, which only knows "localhost".
-      MINIO_INTERNAL_ENDPOINT: minio:9000
-      MINIO_PUBLIC_ENDPOINT: localhost:9000
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
-      MINIO_BUCKET: recordings
+    volumes:
+      - "./configs/docker/meeting-service.json:/app/configs/meeting-service.json:ro"
     ports: ["8083:8080"]
     depends_on:
       postgres: { condition: service_healthy }
@@ -107,14 +88,8 @@ services:
 
   api-gateway:
     build: { context: ., args: { SERVICE: api-gateway } }
-    environment:
-      PORT: "8080"
-      JWT_SIGNING_KEY: dev-only-signing-key-change-me
-      REDIS_ADDR: redis:6379
-      AUTH_SERVICE_URL: http://auth-service:8080
-      USER_SERVICE_URL: http://user-service:8080
-      ORG_SERVICE_URL: http://organization-service:8080
-      MEETING_SERVICE_URL: http://meeting-service:8080
+    volumes:
+      - "./configs/docker/api-gateway.json:/app/configs/api-gateway.json:ro"
     ports: ["8000:8080"]
     depends_on:
       redis: { condition: service_healthy }

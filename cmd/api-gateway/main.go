@@ -3,6 +3,8 @@
 package main
 
 import (
+	"flag"
+	"fmt"
 	"os"
 
 	"github.com/redis/go-redis/v9"
@@ -14,16 +16,38 @@ import (
 	"github.com/shivamrajput177/ai-meeting-intelligence/internal/routes"
 )
 
-func main() {
-	log := logger.New("api-gateway", logger.ParseLevel(config.Env("LOG_LEVEL", "info")))
+// serviceConfig is api-gateway's whole configuration surface — see
+// configs/api-gateway.template.json for the shape and dev-safe defaults.
+type serviceConfig struct {
+	Port              string `json:"port"`
+	LogLevel          string `json:"log_level"`
+	JWTSigningKey     string `json:"jwt_signing_key"`
+	RedisAddr         string `json:"redis_addr"`
+	AuthServiceURL    string `json:"auth_service_url"`
+	UserServiceURL    string `json:"user_service_url"`
+	OrgServiceURL     string `json:"org_service_url"`
+	MeetingServiceURL string `json:"meeting_service_url"`
+}
 
-	rdb := initRedis()
-	jwtSecret := initJWTSecret()
+func main() {
+	configPath := flag.String("config", "configs/api-gateway.json", "path to config JSON file")
+	flag.Parse()
+
+	cfg, err := config.Load[serviceConfig](*configPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "load config:", err)
+		os.Exit(1)
+	}
+
+	log := logger.New("api-gateway", logger.ParseLevel(cfg.LogLevel))
+
+	rdb := initRedis(cfg)
+	jwtSecret := []byte(cfg.JWTSigningKey)
 
 	srv := httpserver.New("api-gateway", log)
-	routes.Register(srv.Mux, initServiceURLs(), jwtSecret, rdb, log)
+	routes.Register(srv.Mux, initServiceURLs(cfg), jwtSecret, rdb, log)
 
-	addr := ":" + config.Env("PORT", "8000")
+	addr := ":" + cfg.Port
 	log.Info("starting", "addr", addr)
 	if err := srv.ListenAndServe(addr); err != nil {
 		log.Error("server stopped", "err", err)
@@ -31,19 +55,15 @@ func main() {
 	}
 }
 
-func initRedis() *redis.Client {
-	return redisx.NewClient(config.Env("REDIS_ADDR", "localhost:6379"))
+func initRedis(cfg serviceConfig) *redis.Client {
+	return redisx.NewClient(cfg.RedisAddr)
 }
 
-func initJWTSecret() []byte {
-	return []byte(config.Env("JWT_SIGNING_KEY", "dev-only-signing-key-change-me"))
-}
-
-func initServiceURLs() routes.ServiceURLs {
+func initServiceURLs(cfg serviceConfig) routes.ServiceURLs {
 	return routes.ServiceURLs{
-		Auth:    config.Env("AUTH_SERVICE_URL", "http://localhost:8080"),
-		User:    config.Env("USER_SERVICE_URL", "http://localhost:8081"),
-		Org:     config.Env("ORG_SERVICE_URL", "http://localhost:8082"),
-		Meeting: config.Env("MEETING_SERVICE_URL", "http://localhost:8083"),
+		Auth:    cfg.AuthServiceURL,
+		User:    cfg.UserServiceURL,
+		Org:     cfg.OrgServiceURL,
+		Meeting: cfg.MeetingServiceURL,
 	}
 }

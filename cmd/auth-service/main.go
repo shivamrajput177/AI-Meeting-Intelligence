@@ -4,6 +4,8 @@ package main
 
 import (
 	"context"
+	"flag"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -21,12 +23,36 @@ import (
 	"github.com/shivamrajput177/ai-meeting-intelligence/internal/platform/logger"
 )
 
+// serviceConfig is auth-service's whole configuration surface — see
+// configs/auth-service.template.json for the shape and dev-safe defaults.
+type serviceConfig struct {
+	Port                    string `json:"port"`
+	LogLevel                string `json:"log_level"`
+	DatabaseURL             string `json:"database_url"`
+	InternalServiceToken    string `json:"internal_service_token"`
+	OrgServiceURL           string `json:"org_service_url"`
+	UserServiceURL          string `json:"user_service_url"`
+	JWTSigningKey           string `json:"jwt_signing_key"`
+	AccessTokenTTL          string `json:"access_token_ttl"`
+	RefreshTokenTTL         string `json:"refresh_token_ttl"`
+	AuthDevExposeResetToken bool   `json:"auth_dev_expose_reset_token"`
+}
+
 func main() {
-	log := logger.New("auth-service", logger.ParseLevel(config.Env("LOG_LEVEL", "info")))
+	configPath := flag.String("config", "configs/auth-service.json", "path to config JSON file")
+	flag.Parse()
+
+	cfg, err := config.Load[serviceConfig](*configPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "load config:", err)
+		os.Exit(1)
+	}
+
+	log := logger.New("auth-service", logger.ParseLevel(cfg.LogLevel))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	pool, err := dbx.NewPool(ctx, config.Env("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/meetingintel"))
+	pool, err := dbx.NewPool(ctx, cfg.DatabaseURL)
 	if err != nil {
 		log.Error("connect to postgres", "err", err)
 		os.Exit(1)
@@ -38,17 +64,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	internalToken := config.Env("INTERNAL_SERVICE_TOKEN", "dev-internal-token")
-	orgClient := authclient.NewOrgClient(config.Env("ORG_SERVICE_URL", "http://localhost:8082"), internalToken)
-	userClient := authclient.NewUserClient(config.Env("USER_SERVICE_URL", "http://localhost:8081"), internalToken)
+	orgClient := authclient.NewOrgClient(cfg.OrgServiceURL, cfg.InternalServiceToken)
+	userClient := authclient.NewUserClient(cfg.UserServiceURL, cfg.InternalServiceToken)
 
 	credentialsRepo := authpg.NewCredentialsRepository(pool)
 	refreshRepo := authpg.NewRefreshTokenRepository(pool)
 	resetRepo := authpg.NewPasswordResetRepository(pool)
 
-	jwtSecret := []byte(config.Env("JWT_SIGNING_KEY", "dev-only-signing-key-change-me"))
-	accessTTL := config.EnvDuration("ACCESS_TOKEN_TTL", 15*time.Minute)
-	refreshTTL := config.EnvDuration("REFRESH_TOKEN_TTL", 7*24*time.Hour)
+	jwtSecret := []byte(cfg.JWTSigningKey)
+	accessTTL := config.ParseDuration(cfg.AccessTokenTTL, 15*time.Minute)
+	refreshTTL := config.ParseDuration(cfg.RefreshTokenTTL, 7*24*time.Hour)
 	tokenIssuer := usecase.NewTokenIssuer(jwtSecret, accessTTL, refreshTTL, refreshRepo)
 
 	handler := authhttp.NewHandler(
@@ -56,14 +81,14 @@ func main() {
 		usecase.NewLoginUseCase(userClient, credentialsRepo, tokenIssuer),
 		usecase.NewRefreshUseCase(refreshRepo, tokenIssuer),
 		usecase.NewLogoutUseCase(refreshRepo),
-		usecase.NewRequestPasswordResetUseCase(userClient, resetRepo, log, config.EnvBool("AUTH_DEV_EXPOSE_RESET_TOKEN", false)),
+		usecase.NewRequestPasswordResetUseCase(userClient, resetRepo, log, cfg.AuthDevExposeResetToken),
 		usecase.NewConfirmPasswordResetUseCase(resetRepo, credentialsRepo),
 	)
 
 	srv := httpserver.New("auth-service", log)
 	authhttp.RegisterRoutes(srv.Mux, handler)
 
-	addr := ":" + config.Env("PORT", "8080")
+	addr := ":" + cfg.Port
 	log.Info("starting", "addr", addr)
 	if err := srv.ListenAndServe(addr); err != nil {
 		log.Error("server stopped", "err", err)

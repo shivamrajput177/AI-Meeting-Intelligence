@@ -4,6 +4,8 @@ package main
 
 import (
 	"context"
+	"flag"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -20,12 +22,36 @@ import (
 	"github.com/shivamrajput177/ai-meeting-intelligence/internal/platform/logger"
 )
 
+// serviceConfig is meeting-service's whole configuration surface — see
+// configs/meeting-service.template.json for the shape and dev-safe
+// defaults.
+type serviceConfig struct {
+	Port                  string `json:"port"`
+	LogLevel              string `json:"log_level"`
+	DatabaseURL           string `json:"database_url"`
+	MinIOInternalEndpoint string `json:"minio_internal_endpoint"`
+	MinIOPublicEndpoint   string `json:"minio_public_endpoint"`
+	MinIOAccessKey        string `json:"minio_access_key"`
+	MinIOSecretKey        string `json:"minio_secret_key"`
+	MinIOBucket           string `json:"minio_bucket"`
+	MinIOUseSSL           bool   `json:"minio_use_ssl"`
+}
+
 func main() {
-	log := logger.New("meeting-service", logger.ParseLevel(config.Env("LOG_LEVEL", "info")))
+	configPath := flag.String("config", "configs/meeting-service.json", "path to config JSON file")
+	flag.Parse()
+
+	cfg, err := config.Load[serviceConfig](*configPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "load config:", err)
+		os.Exit(1)
+	}
+
+	log := logger.New("meeting-service", logger.ParseLevel(cfg.LogLevel))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	pool, err := dbx.NewPool(ctx, config.Env("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/meetingintel"))
+	pool, err := dbx.NewPool(ctx, cfg.DatabaseURL)
 	if err != nil {
 		log.Error("connect to postgres", "err", err)
 		os.Exit(1)
@@ -40,12 +66,12 @@ func main() {
 	// See internal/meetingsvc/storage/minio's doc comment for why
 	// internal/public are two different endpoints.
 	storage, err := minio.New(
-		config.Env("MINIO_INTERNAL_ENDPOINT", "localhost:9000"),
-		config.Env("MINIO_PUBLIC_ENDPOINT", "localhost:9000"),
-		config.Env("MINIO_ACCESS_KEY", "minioadmin"),
-		config.Env("MINIO_SECRET_KEY", "minioadmin"),
-		config.Env("MINIO_BUCKET", "recordings"),
-		config.EnvBool("MINIO_USE_SSL", false),
+		cfg.MinIOInternalEndpoint,
+		cfg.MinIOPublicEndpoint,
+		cfg.MinIOAccessKey,
+		cfg.MinIOSecretKey,
+		cfg.MinIOBucket,
+		cfg.MinIOUseSSL,
 	)
 	if err != nil {
 		log.Error("init minio client", "err", err)
@@ -69,7 +95,7 @@ func main() {
 	srv := httpserver.New("meeting-service", log)
 	meetinghttp.RegisterRoutes(srv.Mux, handler)
 
-	addr := ":" + config.Env("PORT", "8083")
+	addr := ":" + cfg.Port
 	log.Info("starting", "addr", addr)
 	if err := srv.ListenAndServe(addr); err != nil {
 		log.Error("server stopped", "err", err)

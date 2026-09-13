@@ -1,0 +1,10 @@
+{
+  "port": "8000",
+  "log_level": "info",
+  "jwt_signing_key": "dev-only-signing-key-change-me",
+  "redis_addr": "localhost:6379",
+  "auth_service_url": "http://localhost:8080",
+  "user_service_url": "http://localhost:8081",
+  "org_service_url": "http://localhost:8082",
+  "meeting_service_url": "http://localhost:8083"
+}

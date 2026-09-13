@@ -1,0 +1,10 @@
+{
+  "port": "8080",
+  "log_level": "info",
+  "jwt_signing_key": "dev-only-signing-key-change-me",
+  "redis_addr": "redis:6379",
+  "auth_service_url": "http://auth-service:8080",
+  "user_service_url": "http://user-service:8080",
+  "org_service_url": "http://organization-service:8080",
+  "meeting_service_url": "http://meeting-service:8080"
+}

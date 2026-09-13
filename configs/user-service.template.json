@@ -1,0 +1,6 @@
+{
+  "port": "8081",
+  "log_level": "info",
+  "database_url": "postgres://postgres:postgres@localhost:5432/meetingintel",
+  "internal_service_token": "dev-internal-token"
+}

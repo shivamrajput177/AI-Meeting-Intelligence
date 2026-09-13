@@ -14,6 +14,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" \
     -o /out/server ./cmd/${SERVICE}
 
 FROM gcr.io/distroless/static-debian12:nonroot
+WORKDIR /app
 COPY --from=build /out/server /server
 EXPOSE 8080
+# Each service's config.json is bind-mounted to configs/<service>.json
+# (relative to this WORKDIR) — see docker-compose.yaml.
 ENTRYPOINT ["/server"]

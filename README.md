@@ -64,23 +64,35 @@ hand. Then:
 - **MinIO console**: http://localhost:9001 (`minioadmin` / `minioadmin`).
 
 Password reset returns its token directly in the API response in this dev
-setup (`AUTH_DEV_EXPOSE_RESET_TOKEN=true` in `docker-compose.yaml`) rather
-than emailing it — there's no Notification Service to send real email
-until Phase 4.
+setup (`auth_dev_expose_reset_token: true` in
+`configs/docker/auth-service.json`) rather than emailing it — there's no
+Notification Service to send real email until Phase 4.
+
+### Configuration
+
+Every service reads its settings from a JSON file instead of environment
+variables — see `configs/<service>.template.json` for the full shape and
+dev-safe defaults. `docker compose up` uses the compose-network copies
+already checked in under `configs/docker/` (real hostnames like `postgres`
+and `minio`); running a binary directly on the host uses
+`configs/<service>.json`, which is gitignored, so run `make configs` once
+to seed it from the template, then edit in whatever you need to change.
+Point `database_url` at any Postgres 16+ instance and `redis_addr` at any
+Redis — migrations run automatically on startup either way. Pass a
+different file with `-config`, e.g. `go run ./cmd/auth-service -config
+/path/to/config.json`.
 
 ### Local development without Docker
 
 Each service is a normal Go binary (`go run ./cmd/auth-service`, etc.)
-reading config from environment variables (see each `cmd/*/main.go` for
-the full list and defaults). Point `DATABASE_URL` at any Postgres 16+
-instance and `REDIS_ADDR` at any Redis — migrations run automatically on
-startup either way.
+reading `configs/<service>.json` by default — see Configuration above.
 
 ```bash
-go build ./...   # compiles every service
+make configs      # seed configs/*.json from the checked-in templates
+go build ./...    # compiles every service
 go vet ./...
-go test ./...    # unit tests — jwtutil, passwordutil, and a usecase test
-                  # against an in-memory fake repository (no DB needed)
+go test ./...     # unit tests — jwtutil, passwordutil, and a usecase test
+                   # against an in-memory fake repository (no DB needed)
 golangci-lint run ./...
 ```
 
