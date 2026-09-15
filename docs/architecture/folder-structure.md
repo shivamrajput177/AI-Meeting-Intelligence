@@ -2,8 +2,11 @@
 
 Single repo, but the backend is a **Go workspace** (`go.work` at the repo
 root): `shared/` is its own Go module, and every `services/<name>/` is a
-separate Go module with its own `go.mod`, one `cmd/` entrypoint, and its
-own `internal/` package tree. `go.work` lists all of them under `use` so
+separate Go module with its own `go.mod`, a `main.go` sitting right next
+to it (no `cmd/` subdirectory — each service is small enough that one
+entrypoint at the module root reads clearer than a level of nesting for
+it), and its own `internal/` package tree. `go.work` lists all of them
+under `use` so
 `go build`/`go test` resolve across module boundaries locally, with no
 real `github.com/...` release needed for `shared` — see "Why a workspace,
 not one module" below for why this only works because `shared/` isn't
@@ -52,14 +55,14 @@ library moved out from under it.
 ├── services/
 │   ├── api-gateway/
 │   │   ├── go.mod
-│   │   ├── cmd/main.go
+│   │   ├── main.go
 │   │   └── internal/
 │   │       ├── handler/               # router.go (Register) — no domain/usecase/repository, just routing+middleware+proxy composition
 │   │       └── proxy/                 # net/http/httputil.ReverseProxy wrapper
 │   │
 │   ├── auth-service/
 │   │   ├── go.mod
-│   │   ├── cmd/main.go
+│   │   ├── main.go
 │   │   ├── migrations/{0001_init.up.sql, embed.go}
 │   │   └── internal/
 │   │       ├── domain/                # entities + repository interfaces + errors — no external deps
@@ -68,7 +71,7 @@ library moved out from under it.
 │   │       ├── handler/                # this service's own REST API (handler.go + routes.go)
 │   │       └── client/                 # OrgClient/UserClient — outbound REST calls to org/user services, built on shared/httpclient
 │   │
-│   ├── user-service/       (go.mod, cmd/, migrations/, internal/{domain,usecase,repository/postgres,handler})
+│   ├── user-service/       (go.mod, main.go, migrations/, internal/{domain,usecase,repository/postgres,handler})
 │   ├── organization-service/ (same shape)
 │   ├── meeting-service/     (same shape, + internal/storage/minio — see its own doc comment for the internal/public endpoint split)
 │   │

@@ -82,11 +82,11 @@ run `make configs` once to seed it from the template, then edit in
 whatever you need to change. Point `database_url` at any Postgres 16+
 instance and `redis_addr` at any Redis — migrations run automatically on
 startup either way. Pass a different file with `-config`, e.g. `go run
-./services/auth-service/cmd -config /path/to/config.json`.
+./services/auth-service -config /path/to/config.json`.
 
 ### Local development without Docker
 
-Each service is a normal Go binary (`go run ./services/auth-service/cmd`,
+Each service is a normal Go binary (`go run ./services/auth-service`,
 etc., run from the repo root so `go.work` is picked up) reading
 `deployments/configs/<service>.json` by default — see Configuration
 above.

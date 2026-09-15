@@ -14,7 +14,7 @@ WORKDIR /src
 # the source — copy everything up front.
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" \
-    -o /out/server ./services/${SERVICE}/cmd
+    -o /out/server ./services/${SERVICE}
 
 FROM gcr.io/distroless/static-debian12:nonroot
 WORKDIR /app

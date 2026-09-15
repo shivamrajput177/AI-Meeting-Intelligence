@@ -133,15 +133,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with: { go-version: '1.23' }
-      - run: go vet ./...
-      - run: golangci-lint run ./cmd/${{ matrix.service }}/...
-      - run: go test -race -coverprofile=coverage.out ./internal/${{ matrix.service }}/...
+      - run: cd services/${{ matrix.service }} && go vet ./...
+      - run: cd services/${{ matrix.service }} && golangci-lint run ./...
+      - run: cd services/${{ matrix.service }} && go test -race -coverprofile=coverage.out ./...
       - uses: aquasecurity/trivy-action@master   # image + dep vuln scan
         with: { scan-type: fs, scan-ref: '.' }
       - uses: docker/build-push-action@v6
         with:
           context: .
-          file: cmd/${{ matrix.service }}/Dockerfile
+          file: deployments/Dockerfile
           push: ${{ github.ref == 'refs/heads/main' }}
           tags: ghcr.io/${{ github.repository }}/${{ matrix.service }}:${{ github.sha }}
       - run: helm lint deploy/helm/meeting-intel/charts/${{ matrix.service }}
