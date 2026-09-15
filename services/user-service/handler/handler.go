@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/user-service/domain"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/user-service/entity"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/user-service/usecase"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/apperr"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/httpserver"
@@ -36,19 +37,8 @@ func NewHandler(
 	}
 }
 
-type userResponse struct {
-	ID        string `json:"id"`
-	OrgID     string `json:"orgId"`
-	Email     string `json:"email"`
-	Name      string `json:"name"`
-	Role      string `json:"role"`
-	Status    string `json:"status"`
-	AvatarURL string `json:"avatarUrl"`
-	CreatedAt string `json:"createdAt"`
-}
-
-func toUserResponse(u *domain.User) userResponse {
-	return userResponse{
+func toUserResponse(u *domain.User) entity.UserResponse {
+	return entity.UserResponse{
 		ID: u.ID, OrgID: u.OrgID, Email: u.Email, Name: u.Name,
 		Role: u.Role, Status: u.Status, AvatarURL: u.AvatarURL,
 		CreatedAt: u.CreatedAt.Format(time.RFC3339),
@@ -57,15 +47,8 @@ func toUserResponse(u *domain.User) userResponse {
 
 // --- internal routes (called by Auth Service, not the gateway) ---
 
-type createUserRequest struct {
-	OrgID string `json:"orgId"`
-	Email string `json:"email"`
-	Name  string `json:"name"`
-	Role  string `json:"role"`
-}
-
 func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) error {
-	var req createUserRequest
+	var req entity.CreateUserRequest
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
 		return err
 	}
@@ -79,15 +62,6 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-type lookupResponse struct {
-	Matches []struct {
-		UserID string `json:"userId"`
-		OrgID  string `json:"orgId"`
-		Role   string `json:"role"`
-		Status string `json:"status"`
-	} `json:"matches"`
-}
-
 func (h *Handler) LookupByEmail(w http.ResponseWriter, r *http.Request) error {
 	email := r.URL.Query().Get("email")
 	if email == "" {
@@ -97,14 +71,9 @@ func (h *Handler) LookupByEmail(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	resp := lookupResponse{}
+	resp := entity.LookupResponse{}
 	for _, m := range matches {
-		resp.Matches = append(resp.Matches, struct {
-			UserID string `json:"userId"`
-			OrgID  string `json:"orgId"`
-			Role   string `json:"role"`
-			Status string `json:"status"`
-		}{UserID: m.UserID, OrgID: m.OrgID, Role: m.Role, Status: m.Status})
+		resp.Matches = append(resp.Matches, entity.LookupMatch{UserID: m.UserID, OrgID: m.OrgID, Role: m.Role, Status: m.Status})
 	}
 	httpserver.JSON(w, http.StatusOK, resp)
 	return nil
@@ -122,13 +91,8 @@ func (h *Handler) GetMe(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-type updateMeRequest struct {
-	Name      string `json:"name"`
-	AvatarURL string `json:"avatarUrl"`
-}
-
 func (h *Handler) UpdateMe(w http.ResponseWriter, r *http.Request) error {
-	var req updateMeRequest
+	var req entity.UpdateMeRequest
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
 		return err
 	}

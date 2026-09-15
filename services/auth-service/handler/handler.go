@@ -6,6 +6,7 @@ package handler
 import (
 	"net/http"
 
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/entity"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/usecase"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/httpserver"
 )
@@ -33,25 +34,12 @@ func NewHandler(
 	}
 }
 
-type tokenResponse struct {
-	AccessToken  string `json:"accessToken"`
-	RefreshToken string `json:"refreshToken"`
-	ExpiresIn    int    `json:"expiresIn"`
-}
-
-func toTokenResponse(t *usecase.TokenPair) tokenResponse {
-	return tokenResponse{AccessToken: t.AccessToken, RefreshToken: t.RefreshToken, ExpiresIn: t.ExpiresIn}
-}
-
-type signupRequest struct {
-	OrgName  string `json:"orgName"`
-	Email    string `json:"email"`
-	Name     string `json:"name"`
-	Password string `json:"password"`
+func toTokenResponse(t *usecase.TokenPair) entity.TokenResponse {
+	return entity.TokenResponse{AccessToken: t.AccessToken, RefreshToken: t.RefreshToken, ExpiresIn: t.ExpiresIn}
 }
 
 func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) error {
-	var req signupRequest
+	var req entity.SignupRequest
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
 		return err
 	}
@@ -65,13 +53,8 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-type loginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-}
-
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) error {
-	var req loginRequest
+	var req entity.LoginRequest
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
 		return err
 	}
@@ -83,14 +66,8 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-type refreshRequest struct {
-	OrgID        string `json:"orgId"`
-	RefreshToken string `json:"refreshToken"`
-	Role         string `json:"role"`
-}
-
 func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) error {
-	var req refreshRequest
+	var req entity.RefreshRequest
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
 		return err
 	}
@@ -104,13 +81,8 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-type logoutRequest struct {
-	OrgID        string `json:"orgId"`
-	RefreshToken string `json:"refreshToken"`
-}
-
 func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) error {
-	var req logoutRequest
+	var req entity.LogoutRequest
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
 		return err
 	}
@@ -121,19 +93,8 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-type resetRequestRequest struct {
-	Email string `json:"email"`
-}
-
-type resetRequestResponse struct {
-	// DevToken is only ever non-empty when AUTH_DEV_EXPOSE_RESET_TOKEN is
-	// set — see usecase.RequestPasswordResetUseCase's doc comment. Never
-	// set this env var in the public demo deployment.
-	DevToken string `json:"devToken,omitempty"`
-}
-
 func (h *Handler) RequestPasswordReset(w http.ResponseWriter, r *http.Request) error {
-	var req resetRequestRequest
+	var req entity.ResetRequestRequest
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
 		return err
 	}
@@ -141,17 +102,12 @@ func (h *Handler) RequestPasswordReset(w http.ResponseWriter, r *http.Request) e
 	if err != nil {
 		return err
 	}
-	httpserver.JSON(w, http.StatusOK, resetRequestResponse{DevToken: devToken})
+	httpserver.JSON(w, http.StatusOK, entity.ResetRequestResponse{DevToken: devToken})
 	return nil
 }
 
-type resetConfirmRequest struct {
-	Token       string `json:"token"`
-	NewPassword string `json:"newPassword"`
-}
-
 func (h *Handler) ConfirmPasswordReset(w http.ResponseWriter, r *http.Request) error {
-	var req resetConfirmRequest
+	var req entity.ResetConfirmRequest
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
 		return err
 	}

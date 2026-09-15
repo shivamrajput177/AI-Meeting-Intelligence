@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/domain"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/entity"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/usecase"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/apperr"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/httpserver"
@@ -24,24 +25,11 @@ func NewHandler(createOrg *usecase.CreateOrgUseCase, getOrg *usecase.GetOrgUseCa
 	return &Handler{createOrg: createOrg, getOrg: getOrg}
 }
 
-type createOrgRequest struct {
-	Name string `json:"name"`
-}
-
-type orgResponse struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Slug      string `json:"slug"`
-	Plan      string `json:"plan"`
-	Status    string `json:"status"`
-	CreatedAt string `json:"createdAt"`
-}
-
 // CreateOrg is called internally by Auth Service during signup (see
 // docs/ROADMAP.md Phase 1 — there's no public "create a second org for an
 // existing user" flow yet).
 func (h *Handler) CreateOrg(w http.ResponseWriter, r *http.Request) error {
-	var req createOrgRequest
+	var req entity.CreateOrgRequest
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
 		return err
 	}
@@ -76,8 +64,8 @@ func (h *Handler) GetOrg(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func toOrgResponse(o *domain.Organization) orgResponse {
-	return orgResponse{
+func toOrgResponse(o *domain.Organization) entity.OrgResponse {
+	return entity.OrgResponse{
 		ID:        o.ID,
 		Name:      o.Name,
 		Slug:      o.Slug,

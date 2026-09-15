@@ -5,6 +5,7 @@ import (
 	"net/url"
 
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/domain"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/entity"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/httpclient"
 )
 
@@ -16,37 +17,17 @@ func NewUserClient(baseURL, internalToken string) *UserClient {
 	return &UserClient{http: httpclient.New(baseURL, internalToken)}
 }
 
-type createUserRequest struct {
-	OrgID string `json:"orgId"`
-	Email string `json:"email"`
-	Name  string `json:"name"`
-	Role  string `json:"role"`
-}
-
-type userResponse struct {
-	ID string `json:"id"`
-}
-
 func (c *UserClient) CreateUser(ctx context.Context, orgID, email, name, role string) (string, error) {
-	var resp userResponse
+	var resp entity.UserResponse
 	if err := c.http.Do(ctx, "POST", "/internal/users",
-		createUserRequest{OrgID: orgID, Email: email, Name: name, Role: role}, &resp); err != nil {
+		entity.CreateUserRequest{OrgID: orgID, Email: email, Name: name, Role: role}, &resp); err != nil {
 		return "", err
 	}
 	return resp.ID, nil
 }
 
-type lookupResponse struct {
-	Matches []struct {
-		UserID string `json:"userId"`
-		OrgID  string `json:"orgId"`
-		Role   string `json:"role"`
-		Status string `json:"status"`
-	} `json:"matches"`
-}
-
 func (c *UserClient) LookupByEmail(ctx context.Context, email string) ([]domain.EmailMatch, error) {
-	var resp lookupResponse
+	var resp entity.LookupResponse
 	path := "/internal/users/lookup?email=" + url.QueryEscape(email)
 	if err := c.http.Do(ctx, "GET", path, nil, &resp); err != nil {
 		return nil, err

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/domain"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/entity"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/usecase"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/apperr"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/httpserver"
@@ -38,21 +39,8 @@ func NewHandler(
 	}
 }
 
-type meetingResponse struct {
-	ID              string  `json:"id"`
-	OrgID           string  `json:"orgId"`
-	Title           string  `json:"title"`
-	CreatedBy       string  `json:"createdBy"`
-	Status          string  `json:"status"`
-	SourceType      string  `json:"sourceType"`
-	DurationSeconds *int    `json:"durationSeconds,omitempty"`
-	StartedAt       *string `json:"startedAt,omitempty"`
-	CreatedAt       string  `json:"createdAt"`
-	UpdatedAt       string  `json:"updatedAt"`
-}
-
-func toMeetingResponse(m *domain.Meeting) meetingResponse {
-	resp := meetingResponse{
+func toMeetingResponse(m *domain.Meeting) entity.MeetingResponse {
+	resp := entity.MeetingResponse{
 		ID: m.ID, OrgID: m.OrgID, Title: m.Title, CreatedBy: m.CreatedBy,
 		Status: m.Status, SourceType: m.SourceType, DurationSeconds: m.DurationSeconds,
 		CreatedAt: m.CreatedAt.Format(time.RFC3339), UpdatedAt: m.UpdatedAt.Format(time.RFC3339),
@@ -64,17 +52,8 @@ func toMeetingResponse(m *domain.Meeting) meetingResponse {
 	return resp
 }
 
-type createMeetingRequest struct {
-	Title string `json:"title"`
-}
-
-type createMeetingResponse struct {
-	MeetingID string `json:"meetingId"`
-	UploadURL string `json:"uploadUrl"`
-}
-
 func (h *Handler) CreateUploadIntent(w http.ResponseWriter, r *http.Request) error {
-	var req createMeetingRequest
+	var req entity.CreateMeetingRequest
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
 		return err
 	}
@@ -84,7 +63,7 @@ func (h *Handler) CreateUploadIntent(w http.ResponseWriter, r *http.Request) err
 	if err != nil {
 		return err
 	}
-	httpserver.JSON(w, http.StatusCreated, createMeetingResponse{MeetingID: out.MeetingID, UploadURL: out.UploadURL})
+	httpserver.JSON(w, http.StatusCreated, entity.CreateMeetingResponse{MeetingID: out.MeetingID, UploadURL: out.UploadURL})
 	return nil
 }
 
@@ -117,13 +96,6 @@ func (h *Handler) GetStatus(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-type listMeetingsResponse struct {
-	Data     []meetingResponse `json:"data"`
-	Page     int               `json:"page"`
-	PageSize int               `json:"pageSize"`
-	Total    int               `json:"total"`
-}
-
 func (h *Handler) ListMeetings(w http.ResponseWriter, r *http.Request) error {
 	q := r.URL.Query()
 	page, _ := strconv.Atoi(q.Get("page"))
@@ -139,16 +111,12 @@ func (h *Handler) ListMeetings(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	resp := listMeetingsResponse{Page: page, PageSize: pageSize, Total: total}
+	resp := entity.ListMeetingsResponse{Page: page, PageSize: pageSize, Total: total}
 	for _, m := range items {
 		resp.Data = append(resp.Data, toMeetingResponse(m))
 	}
 	httpserver.JSON(w, http.StatusOK, resp)
 	return nil
-}
-
-type updateStatusRequest struct {
-	Status string `json:"status"`
 }
 
 // UpdateStatus is the Phase 1 "debug endpoint" for manually flipping a
@@ -159,7 +127,7 @@ func (h *Handler) UpdateStatus(w http.ResponseWriter, r *http.Request) error {
 	if reqctx.Role(r.Context()) != "owner" {
 		return apperr.Forbidden("only the organization owner can manually override meeting status in Phase 1")
 	}
-	var req updateStatusRequest
+	var req entity.UpdateStatusRequest
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
 		return err
 	}

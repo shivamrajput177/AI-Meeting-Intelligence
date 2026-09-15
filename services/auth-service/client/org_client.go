@@ -7,6 +7,7 @@ package client
 import (
 	"context"
 
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/entity"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/httpclient"
 )
 
@@ -18,17 +19,9 @@ func NewOrgClient(baseURL, internalToken string) *OrgClient {
 	return &OrgClient{http: httpclient.New(baseURL, internalToken)}
 }
 
-type createOrgRequest struct {
-	Name string `json:"name"`
-}
-
-type orgResponse struct {
-	ID string `json:"id"`
-}
-
 func (c *OrgClient) CreateOrg(ctx context.Context, name string) (string, error) {
-	var resp orgResponse
-	if err := c.http.Do(ctx, "POST", "/internal/orgs", createOrgRequest{Name: name}, &resp); err != nil {
+	var resp entity.OrgResponse
+	if err := c.http.Do(ctx, "POST", "/internal/orgs", entity.CreateOrgRequest{Name: name}, &resp); err != nil {
 		return "", err
 	}
 	return resp.ID, nil

@@ -74,12 +74,13 @@ exchange for one less directory level in every service.
 │   │   ├── main.go
 │   │   ├── migrations/{0001_init.up.sql, embed.go}
 │   │   ├── domain/                    # entities + repository interfaces + errors — no external deps
+│   │   ├── entity/                    # plain request/response structs (JSON wire shapes only, no behavior) for handler/ and client/ — see "entity vs domain" below
 │   │   ├── usecase/                   # signup, login, refresh, logout, password reset, token issuer
 │   │   ├── repository/postgres/       # pgx-backed CredentialsRepository, RefreshTokenRepository, PasswordResetRepository
 │   │   ├── handler/                   # this service's own REST API (handler.go + routes.go)
 │   │   └── client/                    # OrgClient/UserClient — outbound REST calls to org/user services, built on shared/httpclient
 │   │
-│   ├── user-service/       (go.mod, main.go, migrations/, domain/, usecase/, repository/postgres/, handler/)
+│   ├── user-service/       (go.mod, main.go, migrations/, domain/, entity/, usecase/, repository/postgres/, handler/)
 │   ├── organization-service/ (same shape)
 │   ├── meeting-service/     (same shape, + storage/minio — see its own doc comment for the internal/public MinIO endpoint split)
 │   │
@@ -177,9 +178,12 @@ reverse-proxying, not business logic):
 ```
 services/<name>/
 ├── domain/                # entities + interfaces (ports) — no external deps, nothing here imports anything else in this tree
-│   ├── entity.go          #   e.g. ActionItem, Meeting — plain structs
+│   ├── entity.go          #   e.g. ActionItem, Meeting — plain structs, but the service's *internal* model: what repository/usecase pass around
 │   ├── repository.go      #   interfaces: ActionItemRepository, defined by what usecase needs
 │   └── errors.go
+│
+├── entity/                 # plain request/response structs for this service's REST boundary — see "entity vs domain" below
+│   └── entity.go           #   e.g. CreateMeetingRequest, MeetingResponse — json-tagged, no methods
 │
 ├── usecase/                # business logic — implements the use cases, depends only on domain interfaces
 │   ├── create_meeting.go
@@ -191,15 +195,32 @@ services/<name>/
 │   └── redis/              #   cache-backed implementation, where used
 │
 └── handler/                 # transport adapters — translate the outside world into usecase calls
-    ├── handler.go            #   this service's own REST API (implements the routes documented for it in api-spec.md/microservices.md) — every service has one, since internal callers use the same REST transport as external clients
+    ├── handler.go            #   this service's own REST API: decodes an entity.*Request, calls usecase, encodes an entity.*Response
     ├── routes.go             #   RegisterRoutes(mux, h, ...) — mounts this service's routes on its own *http.ServeMux
     └── kafka/                #   Phase 2+: consumer + producer adapters (publish/subscribe wrappers around usecase calls)
 ```
 
-**Dependency rule**: `handler` depends on `usecase`; `usecase` depends on
-`domain` (interfaces only, never a concrete `repository` package);
-`repository` also depends on `domain` (it implements domain's interfaces).
-Nothing in `domain` imports anything else in the tree. This is the
+**`entity/` vs `domain/entity.go`** — two different things that happen to
+share a name. `domain/entity.go` holds the service's own internal model
+(what `repository` reads out of Postgres and `usecase` operates on —
+`User`, `Meeting`, `Organization`). `entity/` holds the *wire* shapes at
+the REST boundary — what a JSON request body decodes into and what a
+JSON response encodes from (`CreateUserRequest`, `UserResponse`,
+`TokenResponse`, and so on) — used by `handler/` and, where a service
+calls another service directly, by `client/` too (auth-service's
+`CreateOrgRequest`/`OrgResponse` sent to organization-service, for
+instance). They're kept separate on purpose: a domain entity often
+carries fields a client should never see (a password hash) or needs
+reshaped for the wire (a `time.Time` becomes an RFC3339 string) — `entity/`
+is exactly that reshaping's output, not the model itself. Neither package
+has behavior: no methods, just fields and (for `entity/`) json tags —
+data, not a class.
+
+**Dependency rule**: `handler` depends on `usecase` and `entity`;
+`usecase` depends on `domain` (interfaces only, never a concrete
+`repository` package); `repository` also depends on `domain` (it
+implements domain's interfaces). Nothing in `domain` or `entity` imports
+anything else in the tree — both are pure data. This is the
 standard Go Clean/Hexagonal Architecture layout (the same shape as
 `bxcodec/go-clean-arch`: entity → usecase → repository → delivery) —
 dependency inversion at the `domain` boundary is what makes `usecase`
