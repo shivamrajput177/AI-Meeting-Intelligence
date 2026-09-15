@@ -13,10 +13,10 @@ import (
 
 	authmigrations "github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/migrations"
 
-	authclient "github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/internal/client"
-	authhttp "github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/internal/handler"
-	authpg "github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/internal/repository/postgres"
-	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/internal/usecase"
+	authclient "github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/client"
+	authhttp "github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/handler"
+	authpg "github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/repository/postgres"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/usecase"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/config"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/dbx"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/httpserver"

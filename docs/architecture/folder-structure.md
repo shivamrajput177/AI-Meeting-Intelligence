@@ -5,7 +5,9 @@ root): `shared/` is its own Go module, and every `services/<name>/` is a
 separate Go module with its own `go.mod`, a `main.go` sitting right next
 to it (no `cmd/` subdirectory — each service is small enough that one
 entrypoint at the module root reads clearer than a level of nesting for
-it), and its own `internal/` package tree. `go.work` lists all of them
+it), and its `domain/`, `usecase/`, `repository/`, `handler/` packages
+sitting flat at the module root too, parallel to `migrations/` — no
+`internal/` directory anywhere in a service. `go.work` lists all of them
 under `use` so
 `go build`/`go test` resolve across module boundaries locally, with no
 real `github.com/...` release needed for `shared` — see "Why a workspace,
@@ -38,13 +40,21 @@ The actual fix is simpler than either extreme: keep `shared/` out of any
 meaning to the Go toolchain — only a literal path segment called
 `internal` does — so `shared/logger`, `shared/config`, etc. are ordinary
 importable packages, and any module `go.work` lists can import them
-across its own module boundary. Each service still keeps its
-service-specific code under its own `internal/` (domain, usecase,
-repository, handler) so *that* stays properly private to the service —
-nothing outside `services/auth-service/` can import
-`services/auth-service/internal/usecase`, which is exactly the
-encapsulation `internal/` is for. Only the genuinely cross-service
-library moved out from under it.
+across its own module boundary.
+
+Each service's own `domain/usecase/repository/handler` packages don't
+sit under an `internal/` directory either — they're flat at the module
+root, parallel to `migrations/` and `main.go`. That does give up
+something real: `internal/` is Go's one compiler-enforced privacy
+mechanism, and without it nothing stops another module in this workspace
+from importing, say, `services/auth-service/usecase` directly. In
+practice nothing does — each service's own `main.go` is the only
+consumer of its packages, `shared/` is what every service is actually
+meant to share, and the module boundary (a separate `go.mod` per
+service) already keeps one service's code out of another's build unless
+something explicitly imports it. The privacy `internal/` would add on
+top of that is a safety net this repo has chosen to go without, in
+exchange for one less directory level in every service.
 
 ```
 .
@@ -56,24 +66,22 @@ library moved out from under it.
 │   ├── api-gateway/
 │   │   ├── go.mod
 │   │   ├── main.go
-│   │   └── internal/
-│   │       ├── handler/               # router.go (Register) — no domain/usecase/repository, just routing+middleware+proxy composition
-│   │       └── proxy/                 # net/http/httputil.ReverseProxy wrapper
+│   │   ├── handler/                   # router.go (Register) — no domain/usecase/repository, just routing+middleware+proxy composition
+│   │   └── proxy/                     # net/http/httputil.ReverseProxy wrapper
 │   │
 │   ├── auth-service/
 │   │   ├── go.mod
 │   │   ├── main.go
 │   │   ├── migrations/{0001_init.up.sql, embed.go}
-│   │   └── internal/
-│   │       ├── domain/                # entities + repository interfaces + errors — no external deps
-│   │       ├── usecase/                # signup, login, refresh, logout, password reset, token issuer
-│   │       ├── repository/postgres/    # pgx-backed CredentialsRepository, RefreshTokenRepository, PasswordResetRepository
-│   │       ├── handler/                # this service's own REST API (handler.go + routes.go)
-│   │       └── client/                 # OrgClient/UserClient — outbound REST calls to org/user services, built on shared/httpclient
+│   │   ├── domain/                    # entities + repository interfaces + errors — no external deps
+│   │   ├── usecase/                   # signup, login, refresh, logout, password reset, token issuer
+│   │   ├── repository/postgres/       # pgx-backed CredentialsRepository, RefreshTokenRepository, PasswordResetRepository
+│   │   ├── handler/                   # this service's own REST API (handler.go + routes.go)
+│   │   └── client/                    # OrgClient/UserClient — outbound REST calls to org/user services, built on shared/httpclient
 │   │
-│   ├── user-service/       (go.mod, main.go, migrations/, internal/{domain,usecase,repository/postgres,handler})
+│   ├── user-service/       (go.mod, main.go, migrations/, domain/, usecase/, repository/postgres/, handler/)
 │   ├── organization-service/ (same shape)
-│   ├── meeting-service/     (same shape, + internal/storage/minio — see its own doc comment for the internal/public endpoint split)
+│   ├── meeting-service/     (same shape, + storage/minio — see its own doc comment for the internal/public MinIO endpoint split)
 │   │
 │   ├── transcription-service/  # Phase 2+ — same shape once built, + a whisper.cpp client
 │   ├── ai-summary-service/     #  } Phase 2+, + an Ollama client, chunking
@@ -157,17 +165,17 @@ by a tiny nginx container or directly by the API Gateway (one less moving
 part for the public demo VM in `deployment-demo-strategy.md`). This is
 what a recruiter opens; the Go backend is what they read the code for.
 
-## Per-service internal package convention (Clean Architecture)
+## Per-service package convention (Clean Architecture)
 
-Every `services/<name>/internal/` follows the same shape — **domain →
-usecase → repository/handler**, dependencies pointing inward, so
-switching between services during code review needs zero re-orientation
-(the API Gateway is the one exception — it has no domain/usecase of its
-own, only `handler/` + `proxy/`, since its whole job is routing and
+Every `services/<name>/` follows the same shape — **domain → usecase →
+repository/handler**, dependencies pointing inward, so switching between
+services during code review needs zero re-orientation (the API Gateway
+is the one exception — it has no domain/usecase of its own, only
+`handler/` + `proxy/`, since its whole job is routing and
 reverse-proxying, not business logic):
 
 ```
-services/<name>/internal/
+services/<name>/
 ├── domain/                # entities + interfaces (ports) — no external deps, nothing here imports anything else in this tree
 │   ├── entity.go          #   e.g. ActionItem, Meeting — plain structs
 │   ├── repository.go      #   interfaces: ActionItemRepository, defined by what usecase needs

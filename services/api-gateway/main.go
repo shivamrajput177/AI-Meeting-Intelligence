@@ -9,7 +9,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/shivamrajput177/ai-meeting-intelligence/services/api-gateway/internal/handler"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/api-gateway/handler"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/config"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/httpserver"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/logger"

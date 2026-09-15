@@ -12,10 +12,10 @@ import (
 
 	meetingmigrations "github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/migrations"
 
-	meetinghttp "github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/internal/handler"
-	meetingpg "github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/internal/repository/postgres"
-	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/internal/storage/minio"
-	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/internal/usecase"
+	meetinghttp "github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/handler"
+	meetingpg "github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/repository/postgres"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/storage/minio"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/usecase"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/config"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/dbx"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/httpserver"
@@ -63,8 +63,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// See internal/storage/minio's doc comment for why
-	// internal/public are two different endpoints.
+	// See storage/minio's doc comment for why the internal/public
+	// endpoints are two different values.
 	storage, err := minio.New(
 		cfg.MinIOInternalEndpoint,
 		cfg.MinIOPublicEndpoint,

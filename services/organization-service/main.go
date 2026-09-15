@@ -12,9 +12,9 @@ import (
 
 	orgmigrations "github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/migrations"
 
-	orghttp "github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/internal/handler"
-	orgpg "github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/internal/repository/postgres"
-	"github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/internal/usecase"
+	orghttp "github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/handler"
+	orgpg "github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/repository/postgres"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/usecase"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/config"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/dbx"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/httpserver"

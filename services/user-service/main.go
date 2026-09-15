@@ -12,9 +12,9 @@ import (
 
 	usermigrations "github.com/shivamrajput177/ai-meeting-intelligence/services/user-service/migrations"
 
-	userhttp "github.com/shivamrajput177/ai-meeting-intelligence/services/user-service/internal/handler"
-	userpg "github.com/shivamrajput177/ai-meeting-intelligence/services/user-service/internal/repository/postgres"
-	"github.com/shivamrajput177/ai-meeting-intelligence/services/user-service/internal/usecase"
+	userhttp "github.com/shivamrajput177/ai-meeting-intelligence/services/user-service/handler"
+	userpg "github.com/shivamrajput177/ai-meeting-intelligence/services/user-service/repository/postgres"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/user-service/usecase"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/config"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/dbx"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/httpserver"
