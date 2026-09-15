@@ -1,8 +1,13 @@
-package handler
+// Package routes mounts Auth Service's handler.Handler methods onto a
+// *http.ServeMux — kept separate from package handler so "what each
+// route does" (handler.go) and "which path/method maps to which method"
+// (this file) are two files you can read independently.
+package routes
 
 import (
 	"net/http"
 
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/handler"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/httpserver"
 )
 
@@ -10,7 +15,7 @@ import (
 // the whole point of Auth Service is to be reachable before a caller has
 // a JWT — the API Gateway proxies /api/v1/auth/* without its JWT
 // middleware (see services/api-gateway/handler/router.go).
-func RegisterRoutes(mux *http.ServeMux, h *Handler) {
+func RegisterRoutes(mux *http.ServeMux, h *handler.Handler) {
 	mux.Handle("POST /auth/signup", httpserver.H(h.Signup))
 	mux.Handle("POST /auth/login", httpserver.H(h.Login))
 	mux.Handle("POST /auth/refresh", httpserver.H(h.Refresh))

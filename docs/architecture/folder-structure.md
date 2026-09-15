@@ -77,10 +77,11 @@ exchange for one less directory level in every service.
 │   │   ├── entity/                    # plain request/response structs (JSON wire shapes only, no behavior) for handler/ and client/ — see "entity vs domain" below
 │   │   ├── usecase/                   # signup, login, refresh, logout, password reset, token issuer
 │   │   ├── repository/postgres/       # pgx-backed CredentialsRepository, RefreshTokenRepository, PasswordResetRepository
-│   │   ├── handler/                   # this service's own REST API (handler.go + routes.go)
+│   │   ├── handler/                   # handler.go only — what each route does; imported by routes/, never the other way
+│   │   ├── routes/                    # routes.go only — RegisterRoutes(mux, h) mapping path+method to a handler.Handler method
 │   │   └── client/                    # OrgClient/UserClient — outbound REST calls to org/user services, built on shared/httpclient
 │   │
-│   ├── user-service/       (go.mod, main.go, migrations/, domain/, entity/, usecase/, repository/postgres/, handler/)
+│   ├── user-service/       (go.mod, main.go, migrations/, domain/, entity/, usecase/, repository/postgres/, handler/, routes/)
 │   ├── organization-service/ (same shape)
 │   ├── meeting-service/     (same shape, + storage/minio — see its own doc comment for the internal/public MinIO endpoint split)
 │   │
@@ -194,11 +195,21 @@ services/<name>/
 │   ├── postgres/           #   pgx-backed implementation, owns exactly this service's schema, sets tenant context
 │   └── redis/              #   cache-backed implementation, where used
 │
-└── handler/                 # transport adapters — translate the outside world into usecase calls
-    ├── handler.go            #   this service's own REST API: decodes an entity.*Request, calls usecase, encodes an entity.*Response
-    ├── routes.go             #   RegisterRoutes(mux, h, ...) — mounts this service's routes on its own *http.ServeMux
-    └── kafka/                #   Phase 2+: consumer + producer adapters (publish/subscribe wrappers around usecase calls)
+├── handler/                 # transport adapters — translate the outside world into usecase calls
+│   ├── handler.go           #   this service's own REST API: decodes an entity.*Request, calls usecase, encodes an entity.*Response
+│   └── kafka/               #   Phase 2+: consumer + producer adapters (publish/subscribe wrappers around usecase calls)
+│
+└── routes/                  # wiring only — no request-handling logic of its own
+    └── routes.go            #   RegisterRoutes(mux, h *handler.Handler, ...) — maps each path+method to one handler.Handler method
 ```
+
+`handler/` and `routes/` are split into two packages, not two files in
+one, for the same reason `domain` and `usecase` are split: `routes.go`
+imports `handler` (for the `*handler.Handler` type), never the other way
+— a dependency direction you can see in the import graph, not just infer
+from reading order. "What a route does" and "which path/method maps to
+which handler method" are genuinely different questions, and splitting
+them means changing one never risks touching the other by accident.
 
 **`entity/` vs `domain/entity.go`** — two different things that happen to
 share a name. `domain/entity.go` holds the service's own internal model

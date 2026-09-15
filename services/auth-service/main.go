@@ -16,6 +16,7 @@ import (
 	authclient "github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/client"
 	authhttp "github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/handler"
 	authpg "github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/repository/postgres"
+	authroutes "github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/routes"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/usecase"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/config"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/dbx"
@@ -86,7 +87,7 @@ func main() {
 	)
 
 	srv := httpserver.New("auth-service", log)
-	authhttp.RegisterRoutes(srv.Mux, handler)
+	authroutes.RegisterRoutes(srv.Mux, handler)
 
 	addr := ":" + cfg.Port
 	log.Info("starting", "addr", addr)

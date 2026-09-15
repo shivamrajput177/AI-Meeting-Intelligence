@@ -14,6 +14,7 @@ import (
 
 	orghttp "github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/handler"
 	orgpg "github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/repository/postgres"
+	orgroutes "github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/routes"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/usecase"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/config"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/dbx"
@@ -64,7 +65,7 @@ func main() {
 	)
 
 	srv := httpserver.New("organization-service", log)
-	orghttp.RegisterRoutes(srv.Mux, handler, cfg.InternalServiceToken)
+	orgroutes.RegisterRoutes(srv.Mux, handler, cfg.InternalServiceToken)
 
 	addr := ":" + cfg.Port
 	log.Info("starting", "addr", addr)

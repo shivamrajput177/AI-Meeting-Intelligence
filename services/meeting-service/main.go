@@ -14,6 +14,7 @@ import (
 
 	meetinghttp "github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/handler"
 	meetingpg "github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/repository/postgres"
+	meetingroutes "github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/routes"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/storage/minio"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/usecase"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/config"
@@ -93,7 +94,7 @@ func main() {
 	)
 
 	srv := httpserver.New("meeting-service", log)
-	meetinghttp.RegisterRoutes(srv.Mux, handler)
+	meetingroutes.RegisterRoutes(srv.Mux, handler)
 
 	addr := ":" + cfg.Port
 	log.Info("starting", "addr", addr)

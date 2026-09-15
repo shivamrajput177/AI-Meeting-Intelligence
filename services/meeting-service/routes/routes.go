@@ -1,8 +1,13 @@
-package handler
+// Package routes mounts Meeting Service's handler.Handler methods onto a
+// *http.ServeMux — kept separate from package handler so "what each
+// route does" (handler.go) and "which path/method maps to which method"
+// (this file) are two files you can read independently.
+package routes
 
 import (
 	"net/http"
 
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/handler"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/httpserver"
 )
 
@@ -12,7 +17,7 @@ import (
 // services/api-gateway/handler/router.go); this service does not re-verify the JWT
 // itself, it trusts the gateway's headers (see reqctx doc comment on the
 // trust model this implies).
-func RegisterRoutes(mux *http.ServeMux, h *Handler) {
+func RegisterRoutes(mux *http.ServeMux, h *handler.Handler) {
 	mux.Handle("POST /meetings", httpserver.H(h.CreateUploadIntent))
 	mux.Handle("POST /meetings/{id}/complete-upload", httpserver.H(h.ConfirmUpload))
 	mux.Handle("GET /meetings/{id}", httpserver.H(h.GetMeeting))
