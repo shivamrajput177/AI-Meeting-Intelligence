@@ -25,10 +25,11 @@ import (
 // serviceConfig is user-service's whole configuration surface — see
 // configs/user-service.template.json for the shape and dev-safe defaults.
 type serviceConfig struct {
-	Port                 string `json:"port"`
-	LogLevel             string `json:"log_level"`
-	DatabaseURL          string `json:"database_url"`
-	InternalServiceToken string `json:"internal_service_token"`
+	Port                     string `json:"port"`
+	LogLevel                 string `json:"log_level"`
+	DatabaseURL              string `json:"database_url"`
+	InternalServiceToken     string `json:"internal_service_token"`
+	UserDevExposeInviteToken bool   `json:"user_dev_expose_invite_token"`
 }
 
 func main() {
@@ -46,6 +47,11 @@ func main() {
 		usecase.NewGetUserUseCase(repo),
 		usecase.NewUpdateProfileUseCase(repo),
 		usecase.NewLookupByEmailUseCase(repo),
+		usecase.NewListUsersUseCase(repo),
+		usecase.NewCreateInviteUseCase(repo, log, cfg.UserDevExposeInviteToken),
+		usecase.NewAcceptInviteUseCase(repo),
+		usecase.NewUpdateRoleUseCase(repo),
+		usecase.NewDeactivateUserUseCase(repo),
 	)
 
 	srv := httpserver.New("user-service", log)

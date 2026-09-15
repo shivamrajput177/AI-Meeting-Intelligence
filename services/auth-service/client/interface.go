@@ -34,4 +34,11 @@ type OrgClient interface {
 type UserClient interface {
 	CreateUser(ctx context.Context, orgID, email, name, role string) (userID string, err error)
 	LookupByEmail(ctx context.Context, email string) ([]entity.EmailMatch, error)
+
+	// AcceptInvite validates an invite token against User Service, which
+	// creates the invited user's row (email/role come from the invite
+	// itself, name from what the invitee supplies at accept time) — the
+	// invite-flow counterpart to CreateUser's role in signup. See
+	// docs/architecture/api-spec.md §Users, POST /invites/{token}/accept.
+	AcceptInvite(ctx context.Context, token, name string) (userID, orgID, role, email string, err error)
 }

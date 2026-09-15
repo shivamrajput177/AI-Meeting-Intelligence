@@ -65,7 +65,24 @@ func Auth(jwtSecret []byte, rdb *redis.Client, log *logger.Logger) func(http.Han
 			r.Header.Set(reqctx.HeaderUserID, claims.Subject)
 			r.Header.Set(reqctx.HeaderOrgID, claims.OrgID)
 			r.Header.Set(reqctx.HeaderRole, claims.Role)
-			next.ServeHTTP(w, r)
+
+			// Also overwrite the request *context*, not just the outbound
+			// headers above — ContextFromHeaders already ran (it wraps the
+			// gateway's whole mux in shared/httpserver.New, ahead of any
+			// route-specific middleware like this one) and seeded the
+			// context from whatever X-Org-Id/X-User-Id/X-Role headers the
+			// original, unauthenticated caller sent. At every other
+			// service that's fine — those headers only ever arrive
+			// already gateway-verified (see ContextFromHeaders' own doc
+			// comment). At the gateway itself the original caller is not
+			// trusted, so those context values must be replaced with the
+			// ones just verified above. This is what lets RequireRole,
+			// chained after Auth on specific routes, trust
+			// reqctx.Role(r.Context()) instead of re-parsing the token.
+			trustedCtx := reqctx.WithUserID(r.Context(), claims.Subject)
+			trustedCtx = reqctx.WithOrgID(trustedCtx, claims.OrgID)
+			trustedCtx = reqctx.WithRole(trustedCtx, claims.Role)
+			next.ServeHTTP(w, r.WithContext(trustedCtx))
 		})
 	}
 }

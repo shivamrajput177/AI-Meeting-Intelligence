@@ -48,9 +48,22 @@ CREATE TABLE IF NOT EXISTS "user".invites (
   id UUID PRIMARY KEY,
   org_id UUID NOT NULL,
   email CITEXT NOT NULL,
-  role TEXT NOT NULL,
-  token_hash TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('admin','manager','member','viewer')),
+  token_hash TEXT NOT NULL UNIQUE,
   invited_by UUID NOT NULL,
   expires_at TIMESTAMPTZ NOT NULL,
   accepted_at TIMESTAMPTZ
 );
+ALTER TABLE "user".invites ENABLE ROW LEVEL SECURITY;
+-- Same break-glass shape as users.tenant_isolation above, for the same
+-- reason: POST /invites/{token}/accept is reached by someone who isn't a
+-- member of the org yet, so there is no app.current_org to scope by until
+-- the token itself is looked up. Only GetInviteByTokenHash sets
+-- app.bypass_tenant_isolation, and only for its own transaction; every
+-- other invite operation (creating one, marking one accepted) already
+-- knows its org_id and goes through the normal tenant-scoped path.
+CREATE POLICY tenant_isolation ON "user".invites
+  USING (
+    org_id = current_setting('app.current_org', true)::uuid
+    OR current_setting('app.bypass_tenant_isolation', true) = 'on'
+  );

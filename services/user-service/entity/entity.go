@@ -47,6 +47,21 @@ type User struct {
 	UpdatedAt time.Time
 }
 
+// Invite is this service's own internal model for a pending org invite —
+// what repository reads out of/writes to Postgres. Not JSON-tagged: it
+// never crosses the wire directly (CreateInvite always reshapes it into
+// an InviteResponse).
+type Invite struct {
+	ID         string
+	OrgID      string
+	Email      string
+	Role       string
+	TokenHash  string
+	InvitedBy  string
+	ExpiresAt  time.Time
+	AcceptedAt *time.Time
+}
+
 // EmailLookup is the minimal, non-sensitive projection returned by
 // LookupByEmail — just enough for Auth Service's login flow to resolve
 // which user+org a bare email address means, without RLS/tenant context
@@ -96,6 +111,64 @@ type UpdateMeRequest struct {
 	AvatarURL string `json:"avatarUrl"`
 }
 
+// ListUsersResponse is GET /orgs/{orgId}/users' body — the standard
+// paginated list envelope from docs/architecture/api-spec.md
+// §"Pagination, filtering, errors".
+type ListUsersResponse struct {
+	Data     []UserResponse `json:"data"`
+	Page     int            `json:"page"`
+	PageSize int            `json:"pageSize"`
+	Total    int            `json:"total"`
+}
+
+// CreateInviteRequest is the body of POST /orgs/{orgId}/invites — an
+// owner/admin inviting a new member at a chosen role (never "owner":
+// ownership transfer isn't a Phase 2 flow). See RegisterRoutes' RequireRole
+// gate and docs/architecture/api-spec.md §Users.
+type CreateInviteRequest struct {
+	Email string `json:"email"`
+	Role  string `json:"role"`
+}
+
+// InviteResponse is CreateInvite's response. DevToken is only ever
+// non-empty when devExposeToken is set on CreateInviteUseCase — see its
+// doc comment, which mirrors auth-service's RequestPasswordResetUseCase:
+// there is no Notification Service yet (that's Phase 4) to email the
+// invite link, so Phase 2 logs the raw token server-side and, in local
+// dev only, returns it here so the accept flow is testable end-to-end
+// without a real mailbox.
+type InviteResponse struct {
+	ID        string `json:"id"`
+	Email     string `json:"email"`
+	Role      string `json:"role"`
+	ExpiresAt string `json:"expiresAt"`
+	DevToken  string `json:"devToken,omitempty"`
+}
+
+// InviteAcceptRequest is the body of the internal POST
+// /internal/invites/accept route — called by Auth Service's AcceptInvite
+// usecase, never directly by the gateway (see
+// docs/architecture/api-spec.md, POST /invites/{token}/accept: Auth
+// Service owns issuing tokens and creating the credentials row, so it's
+// the one that fronts this public route and calls User Service
+// internally, exactly like CreateUser during signup).
+type InviteAcceptRequest struct {
+	Token string `json:"token"`
+	Name  string `json:"name"`
+}
+
+type InviteAcceptResponse struct {
+	UserID string `json:"userId"`
+	OrgID  string `json:"orgId"`
+	Role   string `json:"role"`
+	Email  string `json:"email"`
+}
+
+// UpdateRoleRequest is the body of PATCH /orgs/{orgId}/users/{userId}/role.
+type UpdateRoleRequest struct {
+	Role string `json:"role"`
+}
+
 // --- usecase/*.go: input for each use case's Execute. Not JSON wire
 // structs (no json tags) — these are the usecase layer's own Go-to-Go
 // call contract, passed by handler/ straight from a decoded request. ---
@@ -112,4 +185,24 @@ type UpdateProfileInput struct {
 	UserID    string
 	Name      string
 	AvatarURL string
+}
+
+// ListUsersFilter is repository.Repository.List's pagination input.
+type ListUsersFilter struct {
+	Page     int
+	PageSize int
+}
+
+type CreateInviteInput struct {
+	OrgID     string
+	InvitedBy string
+	Email     string
+	Role      string
+}
+
+type UpdateRoleInput struct {
+	OrgID        string
+	UserID       string
+	Role         string
+	CallerUserID string
 }

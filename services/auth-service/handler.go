@@ -18,6 +18,7 @@ type Handler struct {
 	logout       *usecase.LogoutUseCase
 	requestReset *usecase.RequestPasswordResetUseCase
 	confirmReset *usecase.ConfirmPasswordResetUseCase
+	acceptInvite *usecase.AcceptInviteUseCase
 }
 
 func NewHandler(
@@ -27,10 +28,12 @@ func NewHandler(
 	logout *usecase.LogoutUseCase,
 	requestReset *usecase.RequestPasswordResetUseCase,
 	confirmReset *usecase.ConfirmPasswordResetUseCase,
+	acceptInvite *usecase.AcceptInviteUseCase,
 ) *Handler {
 	return &Handler{
 		signup: signup, login: login, refresh: refresh, logout: logout,
 		requestReset: requestReset, confirmReset: confirmReset,
+		acceptInvite: acceptInvite,
 	}
 }
 
@@ -111,5 +114,23 @@ func (h *Handler) ConfirmPasswordReset(w http.ResponseWriter, r *http.Request) e
 		return err
 	}
 	httpserver.NoContent(w)
+	return nil
+}
+
+// AcceptInvite is the invite-flow counterpart to Signup — see
+// entity.AcceptInviteInput's doc comment. The token travels in the path
+// (POST /invites/{token}/accept), not the body.
+func (h *Handler) AcceptInvite(w http.ResponseWriter, r *http.Request) error {
+	var req entity.AcceptInviteRequest
+	if err := httpserver.DecodeJSON(r, &req); err != nil {
+		return err
+	}
+	tokens, err := h.acceptInvite.AcceptInvite(r.Context(), entity.AcceptInviteInput{
+		Token: r.PathValue("token"), Name: req.Name, Password: req.Password,
+	})
+	if err != nil {
+		return err
+	}
+	httpserver.JSON(w, http.StatusCreated, toTokenResponse(tokens))
 	return nil
 }

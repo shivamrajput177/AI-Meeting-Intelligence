@@ -62,6 +62,7 @@ func main() {
 		usecase.NewLogoutUseCase(refreshRepo),
 		usecase.NewRequestPasswordResetUseCase(userClient, resetRepo, log, cfg.AuthDevExposeResetToken),
 		usecase.NewConfirmPasswordResetUseCase(resetRepo, credentialsRepo),
+		usecase.NewAcceptInviteUseCase(userClient, credentialsRepo, tokenIssuer),
 	)
 
 	srv := httpserver.New("auth-service", log)

@@ -111,6 +111,14 @@ type ResetConfirmRequest struct {
 	NewPassword string `json:"newPassword"`
 }
 
+// AcceptInviteRequest is the body of POST /invites/{token}/accept — the
+// invite-flow counterpart to SignupRequest. The token itself travels in
+// the path, not the body (see RegisterRoutes).
+type AcceptInviteRequest struct {
+	Name     string `json:"name"`
+	Password string `json:"password"`
+}
+
 // --- client/org_client.go, client/user_client.go: outbound calls to
 // organization-service and user-service ---
 
@@ -142,6 +150,23 @@ type LookupMatch struct {
 
 type LookupResponse struct {
 	Matches []LookupMatch `json:"matches"`
+}
+
+// InviteAcceptRequest/Response are the outbound call to User Service's
+// internal POST /internal/invites/accept — mirrors
+// usersvc/entity.InviteAcceptRequest/Response, duplicated rather than
+// imported for the same reason CreateUserRequest is (see this file's own
+// doc comment).
+type InviteAcceptRequest struct {
+	Token string `json:"token"`
+	Name  string `json:"name"`
+}
+
+type InviteAcceptResponse struct {
+	UserID string `json:"userId"`
+	OrgID  string `json:"orgId"`
+	Role   string `json:"role"`
+	Email  string `json:"email"`
 }
 
 // --- usecase/*.go: input/output for each use case's Execute, and the
@@ -182,6 +207,12 @@ type RefreshInput struct {
 type LogoutInput struct {
 	OrgID        string
 	RefreshToken string
+}
+
+type AcceptInviteInput struct {
+	Token    string
+	Name     string
+	Password string
 }
 
 // TokenPair is what every route that "logs someone in" (signup, login,

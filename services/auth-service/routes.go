@@ -22,4 +22,5 @@ func RegisterRoutes(mux *http.ServeMux, h *Handler) {
 	mux.Handle("POST /auth/logout", httpserver.H(h.Logout))
 	mux.Handle("POST /auth/password/reset-request", httpserver.H(h.RequestPasswordReset))
 	mux.Handle("POST /auth/password/reset-confirm", httpserver.H(h.ConfirmPasswordReset))
+	mux.Handle("POST /invites/{token}/accept", httpserver.H(h.AcceptInvite))
 }

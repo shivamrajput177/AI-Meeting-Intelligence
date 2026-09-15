@@ -21,14 +21,21 @@ hand-written REST/JSON; there's no gRPC or protobuf codegen anywhere in
 this design (see `docs/architecture/microservices.md` §"Internal
 Communication" for why).
 
-## Status: Phase 1 (MVP) implemented
+## Status: Phase 1 (MVP) implemented, Phase 2.1 (full RBAC) implemented
 
 Auth, User, Organization, and Meeting services, the API Gateway, and a
 React web app are built and running — signup, login, JWT refresh/rotation,
 logout, password reset, tenant isolation, org/user profile management, and
 meeting upload via presigned MinIO URLs all work end-to-end. See
-`docs/ROADMAP.md`'s Phase 1 section for exact scope, and Phase 2 onward
-for what's next (Kafka, transcription, summarization, RBAC).
+`docs/ROADMAP.md`'s Phase 1 section for exact scope.
+
+Phase 2.1's full RBAC is also in: `admin`/`manager`/`viewer` roles beyond
+Phase 1's `owner`/`member`, org invites (`POST /orgs/{orgId}/invites` →
+`POST /invites/{token}/accept`), role changes, and user deactivation — all
+enforced at two layers (API Gateway pre-check + each service's own
+re-check, per `docs/architecture/observability-security.md` §2). Phase 2
+onward otherwise remains ahead: Kafka, transcription, summarization,
+action-item extraction.
 
 The backend is a **Go workspace** (`go.work` at the repo root): `shared/`
 is its own Go module with no `internal/` in its path, so every

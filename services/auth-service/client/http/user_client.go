@@ -37,3 +37,12 @@ func (c *UserClient) LookupByEmail(ctx context.Context, email string) ([]entity.
 	}
 	return matches, nil
 }
+
+func (c *UserClient) AcceptInvite(ctx context.Context, token, name string) (userID, orgID, role, email string, err error) {
+	var resp entity.InviteAcceptResponse
+	if err := c.http.Do(ctx, "POST", "/internal/invites/accept",
+		entity.InviteAcceptRequest{Token: token, Name: name}, &resp); err != nil {
+		return "", "", "", "", err
+	}
+	return resp.UserID, resp.OrgID, resp.Role, resp.Email, nil
+}

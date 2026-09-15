@@ -50,14 +50,32 @@ func Register(mux *http.ServeMux, urls ServiceURLs, jwtSecret []byte, rdb *redis
 	mux.Handle("/api/v1/auth/password/reset-request",
 		middleware.RateLimit(rdb, "auth-reset", resetBurst, resetPerMinute/60)(proxy.ForwardTo(urls.Auth)))
 	mux.Handle("/api/v1/auth/password/reset-confirm", proxy.ForwardTo(urls.Auth))
+	// Public like signup/login (the whole point of an invite link is that
+	// the recipient has no JWT yet), but token-bucket limited the same way
+	// password reset is — an opaque 256-bit token makes brute force
+	// infeasible regardless, but there's no reason to skip the same cheap
+	// abuse guard every other unauthenticated auth-adjacent route gets.
+	mux.Handle("/api/v1/invites/{token}/accept",
+		middleware.RateLimit(rdb, "invite-accept", resetBurst, resetPerMinute/60)(proxy.ForwardTo(urls.Auth)))
 
 	auth := middleware.Auth(jwtSecret, rdb, log)
 	protect := func(pattern, target string) {
 		mux.Handle(pattern, auth(proxy.ForwardTo(target)))
 	}
+	// protectRole is protect() plus the gateway half of the two-layer RBAC
+	// enforcement documented in docs/architecture/observability-security.md
+	// §2 — the per-service half is each service's own RequireRole re-check
+	// on the same route (e.g. user-service/routes.go's requireOwnerOrAdmin).
+	protectRole := func(pattern, target string, roles ...string) {
+		mux.Handle(pattern, auth(middleware.RequireRole(roles...)(proxy.ForwardTo(target))))
+	}
 
 	protect("/api/v1/users/me", urls.User)
+	protect("/api/v1/orgs/{orgId}/users", urls.User)
 	protect("/api/v1/orgs/{orgId}/users/{userId}", urls.User)
+	protectRole("POST /api/v1/orgs/{orgId}/invites", urls.User, "owner", "admin")
+	protectRole("PATCH /api/v1/orgs/{orgId}/users/{userId}/role", urls.User, "owner", "admin")
+	protectRole("DELETE /api/v1/orgs/{orgId}/users/{userId}", urls.User, "owner", "admin")
 
 	protect("/api/v1/orgs", urls.Org)
 	protect("/api/v1/orgs/{orgId}", urls.Org)
