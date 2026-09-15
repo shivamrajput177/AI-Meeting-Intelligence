@@ -83,15 +83,19 @@ a different, concrete reason — not to shrink the tree for its own sake:
   implemented by exactly one thing, `repository/postgres`, one directory
   below it. Defining it in a `domain` package elsewhere in the tree put
   it further from that implementation than it needed to be; defining it
-  in `repository/repository.go` — the parent of `repository/postgres`
+  in `repository/interface.go` — the parent of `repository/postgres`
   — puts it exactly where its one implementation lives, and `usecase`
   still only ever depends on the interface type, never on
   `*postgres.OrgRepository` directly, which is what actually makes it
   unit-testable with an in-memory fake. The same move applies to every
   other interface-with-one-implementation in a service: auth-service's
   `OrgClient`/`UserClient` (implemented by `client/http`, so they live in
-  `client/client.go`) and meeting-service's `ObjectStorage` (implemented
-  by `storage/minio`, so it lives in `storage/storage.go`).
+  `client/interface.go`) and meeting-service's `ObjectStorage` (implemented
+  by `storage/minio`, so it lives in `storage/interface.go`) — `interface.go`
+  is the file name every one of these gets, regardless of which
+  top-level package (`repository`, `client`, `storage`, ...) it sits in,
+  so "where's the interface for this?" always has the same one-word
+  answer.
 
 - **Named errors got inlined.** `domain/errors.go` held package-level
   `var`s like `ErrOrgNotFound = apperr.NotFound("organization not
@@ -157,15 +161,15 @@ alongside `main` and gave up being separately importable at all.
 │   │   ├── entity/                    # every plain data shape in the service — its own model AND its REST-boundary wire structs; see "no more domain/" above
 │   │   ├── usecase/                   # signup, login, refresh, logout, password reset, token issuer
 │   │   ├── repository/
-│   │   │   ├── repository.go          #   CredentialsRepository/RefreshTokenRepository/PasswordResetRepository interfaces
+│   │   │   ├── interface.go           #   CredentialsRepository/RefreshTokenRepository/PasswordResetRepository interfaces
 │   │   │   └── postgres/              #   their one implementation, one directory below the interfaces
 │   │   └── client/
-│   │       ├── client.go              #   OrgClient/UserClient interfaces
+│   │       ├── interface.go           #   OrgClient/UserClient interfaces
 │   │       └── http/                  #   their one implementation — outbound REST calls to org/user services, built on shared/httpclient
 │   │
-│   ├── user-service/       (go.mod, main.go, handler.go, routes.go, migrations/, entity/, usecase/, repository/{repository.go, postgres/})
+│   ├── user-service/       (go.mod, main.go, handler.go, routes.go, migrations/, entity/, usecase/, repository/{interface.go, postgres/})
 │   ├── organization-service/ (same shape)
-│   ├── meeting-service/     (same shape, + storage/{storage.go, minio/} for the ObjectStorage port — see storage/minio's own doc comment for the internal/public MinIO endpoint split)
+│   ├── meeting-service/     (same shape, + storage/{interface.go, minio/} for the ObjectStorage port — see storage/minio's own doc comment for the internal/public MinIO endpoint split)
 │   │
 │   ├── transcription-service/  # Phase 2+ — same shape once built, + a whisper.cpp client
 │   ├── ai-summary-service/     #  } Phase 2+, + an Ollama client, chunking
@@ -273,19 +277,20 @@ services/<name>/
 │   └── ...                #   one file (or a few grouped) per use case; unit-tested against an in-memory fake satisfying repository's interface
 │
 └── repository/             # the interface usecase depends on, right next to its one implementation
-    ├── repository.go       #   interface(s): Repository, or (auth-service) CredentialsRepository/RefreshTokenRepository/PasswordResetRepository — defined by what usecase needs, referencing entity types
+    ├── interface.go        #   interface(s): Repository, or (auth-service) CredentialsRepository/RefreshTokenRepository/PasswordResetRepository — defined by what usecase needs, referencing entity types
     └── postgres/           #   pgx-backed implementation, owns exactly this service's schema, sets tenant context
 ```
 
 A service that talks to another service directly instead of (or as well
 as) Postgres gets the same shape under a differently-named top-level
 package instead of forcing it into `repository/`: auth-service's
-`client/client.go` (interfaces) + `client/http/` (implementation) for
-`OrgClient`/`UserClient`, meeting-service's `storage/storage.go` +
-`storage/minio/` for `ObjectStorage`. The principle is the same
-regardless of the package's name — the interface lives with its one
-real implementation, and `usecase` depends on the interface type, never
-the concrete one.
+`client/interface.go` (interfaces) + `client/http/` (implementation) for
+`OrgClient`/`UserClient`, meeting-service's `storage/interface.go` +
+`storage/minio/` for `ObjectStorage`. `interface.go` is the file name in
+every case, whatever the enclosing package is called — the principle is
+the same regardless: the interface lives with its one real
+implementation, and `usecase` depends on the interface type, never the
+concrete one.
 
 `entity`, `usecase`, and `repository` (and `client`/`storage`, where a
 service has them) stay separate packages — `usecase` depending on
