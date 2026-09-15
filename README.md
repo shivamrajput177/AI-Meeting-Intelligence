@@ -21,7 +21,7 @@ hand-written REST/JSON; there's no gRPC or protobuf codegen anywhere in
 this design (see `docs/architecture/microservices.md` §"Internal
 Communication" for why).
 
-## Status: Phase 1 (MVP) implemented, Phase 2.1 (full RBAC) implemented
+## Status: Phase 1 (MVP) implemented, Phase 2.1–2.2 implemented
 
 Auth, User, Organization, and Meeting services, the API Gateway, and a
 React web app are built and running — signup, login, JWT refresh/rotation,
@@ -33,9 +33,15 @@ Phase 2.1's full RBAC is also in: `admin`/`manager`/`viewer` roles beyond
 Phase 1's `owner`/`member`, org invites (`POST /orgs/{orgId}/invites` →
 `POST /invites/{token}/accept`), role changes, and user deactivation — all
 enforced at two layers (API Gateway pre-check + each service's own
-re-check, per `docs/architecture/observability-security.md` §2). Phase 2
-onward otherwise remains ahead: Kafka, transcription, summarization,
-action-item extraction.
+re-check, per `docs/architecture/observability-security.md` §2).
+
+Phase 2.2's Kafka infra is in too: a single-node KRaft broker in
+`deployments/docker-compose.yaml` plus a one-shot topic-creation service
+(`deployments/kafka-init/`) covering every topic Phase 2's upcoming
+services will produce — see `docs/architecture/kafka-topics.md`'s "Local
+dev infra" section. No service produces or consumes yet; that starts at
+2.3 (Transcription Service). Phase 2 onward otherwise remains ahead:
+transcription, summarization, action-item extraction.
 
 The backend is a **Go workspace** (`go.work` at the repo root): `shared/`
 is its own Go module with no `internal/` in its path, so every

@@ -52,6 +52,57 @@ services:
       timeout: 5s
       retries: 10
 
+  kafka:
+    # Single-node, single-process KRaft broker (no ZooKeeper) — the local
+    # dev equivalent of the 3-broker Strimzi-managed cluster
+    # docs/architecture/kubernetes-cicd.md documents for Phase 5's
+    # Kubernetes deployment. See docs/architecture/kafka-topics.md for the
+    # full topic catalog and naming/partitioning conventions.
+    image: apache/kafka:3.8.0
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      # RF=1 because it's one broker — see kafka-topics.md's own note that
+      # RF=3 is the documented production target, not a local requirement.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      # A fixed dev-only cluster ID (any valid base64-encoded UUID works;
+      # KRaft just needs one at first boot) — same "hardcoded, dev-only,
+      # never used past a laptop" spirit as this file's Postgres/MinIO
+      # credentials.
+      CLUSTER_ID: "Uv5CXqBFSLSkQ6SK5mfsHw"
+    ports:
+      - "29092:29092" # host-reachable listener, for a service run on the host instead of in compose
+    volumes: ["kafkadata:/var/lib/kafka/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
+  kafka-init:
+    # One-shot topic creation on every `docker compose up` (--if-not-exists
+    # makes re-runs a no-op) — the docker-compose stand-in for Phase 5's
+    # declarative Strimzi KafkaTopic CRDs, and this project's Kafka
+    # equivalent of a service's own embedded-migrations-on-startup
+    # pattern for Postgres. Only creates the topics Phase 2's services
+    # (Meeting, Transcription, AI Summary, Action Item) actually produce —
+    # see create-topics.sh's own header for why the full catalog in
+    # kafka-topics.md isn't created yet.
+    image: apache/kafka:3.8.0
+    depends_on:
+      kafka: { condition: service_healthy }
+    entrypoint: ["/bin/bash", "/kafka-init/create-topics.sh"]
+    volumes:
+      - "./kafka-init/create-topics.sh:/kafka-init/create-topics.sh:ro"
+
   organization-service:
     build: { context: .., dockerfile: deployments/Dockerfile, args: { SERVICE: organization-service } }
     volumes:
@@ -115,3 +166,4 @@ services:
 volumes:
   pgdata:
   miniodata:
+  kafkadata:

@@ -29,6 +29,25 @@ would enforce, just without the extra moving part.
   if retention isn't enough (documented as a Phase 6 stretch: log-compacted
   `meeting.snapshot.v1`).
 
+## Local dev infra (Phase 2)
+
+`deployments/docker-compose.yaml`'s `kafka` service is a single-node,
+single-process KRaft broker (`apache/kafka:3.8.0`) — the local stand-in
+for the 3-broker Strimzi-managed cluster `kubernetes-cicd.md` documents
+for Phase 5. A one-shot `kafka-init` service runs
+`deployments/kafka-init/create-topics.sh` on every `docker compose up`
+(idempotent — `--if-not-exists`) to create the topics Phase 2's services
+actually produce: `meeting.uploaded.v1`/`meeting.status-changed.v1`/
+`meeting.deleted.v1` (Meeting Service), `transcription.completed.v1`/
+`transcription.failed.v1` (Transcription Service),
+`chunk.created.v1`/`summary.completed.v1`/`summary.failed.v1` (AI Summary
+Service), and `action-item.extracted.v1`/`action-item.status-changed.v1`
+(Action Item Service) — the four services docs/ROADMAP.md's Phase 2
+builds. The rest of the catalog below is created once the phase that
+builds its producer (Auth/User/Org's own events, Search, Notification,
+Analytics) lands, the same way this script itself didn't exist before
+Phase 2 needed it.
+
 ## Topic Catalog
 
 | Topic | Producer | Consumers | Key | Partitions | Retention | Purpose |
