@@ -14,9 +14,7 @@ import (
 	authmigrations "github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/migrations"
 
 	authclient "github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/client"
-	authhttp "github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/handler"
 	authpg "github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/repository/postgres"
-	authroutes "github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/routes"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/usecase"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/config"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/dbx"
@@ -77,7 +75,7 @@ func main() {
 	refreshTTL := config.ParseDuration(cfg.RefreshTokenTTL, 7*24*time.Hour)
 	tokenIssuer := usecase.NewTokenIssuer(jwtSecret, accessTTL, refreshTTL, refreshRepo)
 
-	handler := authhttp.NewHandler(
+	handler := NewHandler(
 		usecase.NewSignupUseCase(orgClient, userClient, credentialsRepo, tokenIssuer),
 		usecase.NewLoginUseCase(userClient, credentialsRepo, tokenIssuer),
 		usecase.NewRefreshUseCase(refreshRepo, tokenIssuer),
@@ -87,7 +85,7 @@ func main() {
 	)
 
 	srv := httpserver.New("auth-service", log)
-	authroutes.RegisterRoutes(srv.Mux, handler)
+	RegisterRoutes(srv.Mux, handler)
 
 	addr := ":" + cfg.Port
 	log.Info("starting", "addr", addr)

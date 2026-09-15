@@ -1,6 +1,6 @@
-// Package handler is Meeting Service's REST API — see
+// handler.go is Meeting Service's REST API — see
 // docs/architecture/microservices.md §5.
-package handler
+package main
 
 import (
 	"net/http"

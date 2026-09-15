@@ -1,9 +1,9 @@
-// Package handler is the API Gateway's own delivery layer — it has no
+// router.go is the API Gateway's own delivery layer — it has no
 // domain/usecase/repository of its own (see
 // docs/architecture/folder-structure.md), only routing, auth, and
 // rate-limit middleware in front of a reverse proxy to every other
 // service.
-package handler
+package main
 
 import (
 	"net/http"

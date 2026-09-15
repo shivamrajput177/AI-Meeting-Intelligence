@@ -1,8 +1,8 @@
-// Package handler is User Service's own REST API — see
+// handler.go is User Service's own REST API — see
 // docs/architecture/microservices.md §3 and
 // docs/architecture/api-spec.md §Users (only the first two rows of that
 // table are wired in Phase 1; the rest is Phase 2's RBAC work).
-package handler
+package main
 
 import (
 	"net/http"

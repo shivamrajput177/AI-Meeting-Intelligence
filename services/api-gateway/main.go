@@ -9,7 +9,6 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/shivamrajput177/ai-meeting-intelligence/services/api-gateway/handler"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/config"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/httpserver"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/logger"
@@ -45,7 +44,7 @@ func main() {
 	jwtSecret := []byte(cfg.JWTSigningKey)
 
 	srv := httpserver.New("api-gateway", log)
-	handler.Register(srv.Mux, initServiceURLs(cfg), jwtSecret, rdb, log)
+	Register(srv.Mux, initServiceURLs(cfg), jwtSecret, rdb, log)
 
 	addr := ":" + cfg.Port
 	log.Info("starting", "addr", addr)
@@ -59,8 +58,8 @@ func initRedis(cfg serviceConfig) *redis.Client {
 	return redisx.NewClient(cfg.RedisAddr)
 }
 
-func initServiceURLs(cfg serviceConfig) handler.ServiceURLs {
-	return handler.ServiceURLs{
+func initServiceURLs(cfg serviceConfig) ServiceURLs {
+	return ServiceURLs{
 		Auth:    cfg.AuthServiceURL,
 		User:    cfg.UserServiceURL,
 		Org:     cfg.OrgServiceURL,

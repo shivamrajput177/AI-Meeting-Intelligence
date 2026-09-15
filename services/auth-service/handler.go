@@ -1,7 +1,7 @@
-// Package handler is Auth Service's REST API — see
+// handler.go is Auth Service's REST API — see
 // docs/architecture/microservices.md §2 and docs/architecture/api-spec.md
 // §Auth.
-package handler
+package main
 
 import (
 	"net/http"

@@ -5,9 +5,12 @@ root): `shared/` is its own Go module, and every `services/<name>/` is a
 separate Go module with its own `go.mod`, a `main.go` sitting right next
 to it (no `cmd/` subdirectory — each service is small enough that one
 entrypoint at the module root reads clearer than a level of nesting for
-it), and its `domain/`, `usecase/`, `repository/`, `handler/` packages
-sitting flat at the module root too, parallel to `migrations/` — no
-`internal/` directory anywhere in a service. `go.work` lists all of them
+it). `domain/`, `entity/`, `usecase/`, `repository/` stay their own
+importable packages, flat at the module root, parallel to `migrations/`
+— no `internal/` directory anywhere in a service. `handler.go` and
+`routes.go` sit at that same module root too, as plain files next to
+`main.go`, not their own packages — see "handler.go and routes.go are
+`package main`" below for why. `go.work` lists all the modules
 under `use` so
 `go build`/`go test` resolve across module boundaries locally, with no
 real `github.com/...` release needed for `shared` — see "Why a workspace,
@@ -42,19 +45,45 @@ meaning to the Go toolchain — only a literal path segment called
 importable packages, and any module `go.work` lists can import them
 across its own module boundary.
 
-Each service's own `domain/usecase/repository/handler` packages don't
-sit under an `internal/` directory either — they're flat at the module
-root, parallel to `migrations/` and `main.go`. That does give up
-something real: `internal/` is Go's one compiler-enforced privacy
-mechanism, and without it nothing stops another module in this workspace
-from importing, say, `services/auth-service/usecase` directly. In
-practice nothing does — each service's own `main.go` is the only
-consumer of its packages, `shared/` is what every service is actually
-meant to share, and the module boundary (a separate `go.mod` per
-service) already keeps one service's code out of another's build unless
-something explicitly imports it. The privacy `internal/` would add on
-top of that is a safety net this repo has chosen to go without, in
-exchange for one less directory level in every service.
+Each service's own `domain/entity/usecase/repository` packages don't sit
+under an `internal/` directory either — they're flat at the module root,
+parallel to `migrations/` and `main.go`. That does give up something
+real: `internal/` is Go's one compiler-enforced privacy mechanism, and
+without it nothing stops another module in this workspace from
+importing, say, `services/auth-service/usecase` directly. In practice
+nothing does — each service's own `main.go` is the only consumer of its
+packages, `shared/` is what every service is actually meant to share,
+and the module boundary (a separate `go.mod` per service) already keeps
+one service's code out of another's build unless something explicitly
+imports it. The privacy `internal/` would add on top of that is a safety
+net this repo has chosen to go without, in exchange for one less
+directory level in every service.
+
+## handler.go and routes.go are `package main`
+
+Every service's `handler.go` and `routes.go` sit directly beside
+`main.go` — not in their own `handler/`/`routes/` subdirectories the way
+they briefly did, and not in even their own separate packages. All
+three files share `package main`. This is a further step past the
+`domain`/`entity`/`usecase`/`repository` flattening above, and a
+different trade-off from it: those four stayed separate *packages* (just
+not nested under `internal/`), so `usecase.SignupUseCase` is still a
+qualified, explicit reference wherever it's used. `Handler` and
+`RegisterRoutes` are not qualified anywhere anymore — `main.go` calls
+`NewHandler(...)` and `RegisterRoutes(srv.Mux, handler)` directly, no
+package prefix, because there's no longer a package boundary between
+them to cross. `handler.go` and `routes.go` stay two files rather than
+one precisely so "what each route does" and "which path+method maps to
+which method" are still easy to find independently — the file boundary
+carries that distinction now, not a package boundary. This works only
+because `main` is exactly one package per service already (Go requires
+every `.go` file in a directory to agree on their package, and a
+service's directory was always going to be `package main` for its
+entrypoint) — it's the same directory-is-a-package rule that made
+`shared/` need to move out from under `internal/` in the first place,
+just applied in the opposite direction here: instead of moving a package
+out to preserve import access, these two packages moved *in* to sit
+alongside `main` and gave up being separately importable at all.
 
 ```
 .
@@ -66,22 +95,22 @@ exchange for one less directory level in every service.
 │   ├── api-gateway/
 │   │   ├── go.mod
 │   │   ├── main.go
-│   │   ├── handler/                   # router.go (Register) — no domain/usecase/repository, just routing+middleware+proxy composition
-│   │   └── proxy/                     # net/http/httputil.ReverseProxy wrapper
+│   │   ├── router.go                  # package main — Register(mux, urls, ...): routing+middleware+proxy composition; no domain/usecase/repository, no separate handler.go (routing is this service's whole job)
+│   │   └── proxy/                     # net/http/httputil.ReverseProxy wrapper — the one subpackage the gateway still has, since it's a real reusable concern, not wiring
 │   │
 │   ├── auth-service/
 │   │   ├── go.mod
 │   │   ├── main.go
+│   │   ├── handler.go                 # package main — what each route does (decode entity.*Request, call usecase, encode entity.*Response)
+│   │   ├── routes.go                  # package main — RegisterRoutes(mux, h) mapping path+method to a Handler method; see "handler.go and routes.go are package main" above
 │   │   ├── migrations/{0001_init.up.sql, embed.go}
 │   │   ├── domain/                    # entities + repository interfaces + errors — no external deps
-│   │   ├── entity/                    # plain request/response structs (JSON wire shapes only, no behavior) for handler/ and client/ — see "entity vs domain" below
+│   │   ├── entity/                    # plain request/response structs (JSON wire shapes only, no behavior) for handler.go and client/ — see "entity vs domain" below
 │   │   ├── usecase/                   # signup, login, refresh, logout, password reset, token issuer
 │   │   ├── repository/postgres/       # pgx-backed CredentialsRepository, RefreshTokenRepository, PasswordResetRepository
-│   │   ├── handler/                   # handler.go only — what each route does; imported by routes/, never the other way
-│   │   ├── routes/                    # routes.go only — RegisterRoutes(mux, h) mapping path+method to a handler.Handler method
 │   │   └── client/                    # OrgClient/UserClient — outbound REST calls to org/user services, built on shared/httpclient
 │   │
-│   ├── user-service/       (go.mod, main.go, migrations/, domain/, entity/, usecase/, repository/postgres/, handler/, routes/)
+│   ├── user-service/       (go.mod, main.go, handler.go, routes.go, migrations/, domain/, entity/, usecase/, repository/postgres/)
 │   ├── organization-service/ (same shape)
 │   ├── meeting-service/     (same shape, + storage/minio — see its own doc comment for the internal/public MinIO endpoint split)
 │   │
@@ -170,14 +199,18 @@ what a recruiter opens; the Go backend is what they read the code for.
 ## Per-service package convention (Clean Architecture)
 
 Every `services/<name>/` follows the same shape — **domain → usecase →
-repository/handler**, dependencies pointing inward, so switching between
-services during code review needs zero re-orientation (the API Gateway
-is the one exception — it has no domain/usecase of its own, only
-`handler/` + `proxy/`, since its whole job is routing and
+repository → handler**, dependencies pointing inward, so switching
+between services during code review needs zero re-orientation (the API
+Gateway is the one exception — it has no domain/usecase of its own, only
+`router.go` + `proxy/`, since its whole job is routing and
 reverse-proxying, not business logic):
 
 ```
 services/<name>/
+├── main.go                 # package main — wiring only: load config, construct repositories/usecases/Handler, call RegisterRoutes
+├── handler.go               #   package main too — what each route does: decodes an entity.*Request, calls usecase, encodes an entity.*Response
+├── routes.go                #   package main too — RegisterRoutes(mux, h) maps each path+method to one Handler method; see "handler.go and routes.go are package main" above
+│
 ├── domain/                # entities + interfaces (ports) — no external deps, nothing here imports anything else in this tree
 │   ├── entity.go          #   e.g. ActionItem, Meeting — plain structs, but the service's *internal* model: what repository/usecase pass around
 │   ├── repository.go      #   interfaces: ActionItemRepository, defined by what usecase needs
@@ -191,25 +224,23 @@ services/<name>/
 │   ├── list_action_items.go
 │   └── ...                #   one file (or a few grouped) per use case; unit-tested against mocked domain interfaces
 │
-├── repository/             # concrete adapters implementing domain's repository interfaces
-│   ├── postgres/           #   pgx-backed implementation, owns exactly this service's schema, sets tenant context
-│   └── redis/              #   cache-backed implementation, where used
-│
-├── handler/                 # transport adapters — translate the outside world into usecase calls
-│   ├── handler.go           #   this service's own REST API: decodes an entity.*Request, calls usecase, encodes an entity.*Response
-│   └── kafka/               #   Phase 2+: consumer + producer adapters (publish/subscribe wrappers around usecase calls)
-│
-└── routes/                  # wiring only — no request-handling logic of its own
-    └── routes.go            #   RegisterRoutes(mux, h *handler.Handler, ...) — maps each path+method to one handler.Handler method
+└── repository/             # concrete adapters implementing domain's repository interfaces
+    ├── postgres/           #   pgx-backed implementation, owns exactly this service's schema, sets tenant context
+    └── redis/              #   cache-backed implementation, where used
 ```
 
-`handler/` and `routes/` are split into two packages, not two files in
-one, for the same reason `domain` and `usecase` are split: `routes.go`
-imports `handler` (for the `*handler.Handler` type), never the other way
-— a dependency direction you can see in the import graph, not just infer
-from reading order. "What a route does" and "which path/method maps to
-which handler method" are genuinely different questions, and splitting
-them means changing one never risks touching the other by accident.
+`domain`, `entity`, `usecase`, and `repository` stay four separate
+packages — `usecase` depending on `domain`'s interfaces, never a
+concrete `repository`, is what makes it unit-testable with an in-memory
+fake and no real Postgres. `handler.go` and `routes.go` are the
+exception: both `package main`, both living beside `main.go` rather than
+in their own packages — see "handler.go and routes.go are package main"
+above for why that boundary specifically was worth giving up. They still
+stay two *files*, not one: "what a route does" (handler.go) and "which
+path+method maps to which method" (routes.go) are genuinely different
+questions, and keeping them apart means changing one never risks
+touching the other by accident, even without a package boundary
+enforcing it.
 
 **`entity/` vs `domain/entity.go`** — two different things that happen to
 share a name. `domain/entity.go` holds the service's own internal model
@@ -217,7 +248,7 @@ share a name. `domain/entity.go` holds the service's own internal model
 `User`, `Meeting`, `Organization`). `entity/` holds the *wire* shapes at
 the REST boundary — what a JSON request body decodes into and what a
 JSON response encodes from (`CreateUserRequest`, `UserResponse`,
-`TokenResponse`, and so on) — used by `handler/` and, where a service
+`TokenResponse`, and so on) — used by `handler.go` and, where a service
 calls another service directly, by `client/` too (auth-service's
 `CreateOrgRequest`/`OrgResponse` sent to organization-service, for
 instance). They're kept separate on purpose: a domain entity often

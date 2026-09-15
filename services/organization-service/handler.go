@@ -1,8 +1,8 @@
-// Package handler is Organization Service's own REST API. Every internal
+// handler.go is Organization Service's own REST API. Every internal
 // caller (Auth Service, during signup) and every gateway-forwarded
 // request hit the same routes — there is no separate internal protocol,
 // per docs/architecture/microservices.md §"Internal Communication".
-package handler
+package main
 
 import (
 	"net/http"

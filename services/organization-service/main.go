@@ -12,9 +12,7 @@ import (
 
 	orgmigrations "github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/migrations"
 
-	orghttp "github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/handler"
 	orgpg "github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/repository/postgres"
-	orgroutes "github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/routes"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/usecase"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/config"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/dbx"
@@ -59,13 +57,13 @@ func main() {
 	}
 
 	repo := orgpg.NewOrgRepository(pool)
-	handler := orghttp.NewHandler(
+	handler := NewHandler(
 		usecase.NewCreateOrgUseCase(repo),
 		usecase.NewGetOrgUseCase(repo),
 	)
 
 	srv := httpserver.New("organization-service", log)
-	orgroutes.RegisterRoutes(srv.Mux, handler, cfg.InternalServiceToken)
+	RegisterRoutes(srv.Mux, handler, cfg.InternalServiceToken)
 
 	addr := ":" + cfg.Port
 	log.Info("starting", "addr", addr)

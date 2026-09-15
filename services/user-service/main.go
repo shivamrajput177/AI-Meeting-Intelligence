@@ -12,9 +12,7 @@ import (
 
 	usermigrations "github.com/shivamrajput177/ai-meeting-intelligence/services/user-service/migrations"
 
-	userhttp "github.com/shivamrajput177/ai-meeting-intelligence/services/user-service/handler"
 	userpg "github.com/shivamrajput177/ai-meeting-intelligence/services/user-service/repository/postgres"
-	userroutes "github.com/shivamrajput177/ai-meeting-intelligence/services/user-service/routes"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/user-service/usecase"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/config"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/dbx"
@@ -58,7 +56,7 @@ func main() {
 	}
 
 	repo := userpg.NewUserRepository(pool)
-	handler := userhttp.NewHandler(
+	handler := NewHandler(
 		usecase.NewCreateUserUseCase(repo),
 		usecase.NewGetUserUseCase(repo),
 		usecase.NewUpdateProfileUseCase(repo),
@@ -66,7 +64,7 @@ func main() {
 	)
 
 	srv := httpserver.New("user-service", log)
-	userroutes.RegisterRoutes(srv.Mux, handler, cfg.InternalServiceToken)
+	RegisterRoutes(srv.Mux, handler, cfg.InternalServiceToken)
 
 	addr := ":" + cfg.Port
 	log.Info("starting", "addr", addr)

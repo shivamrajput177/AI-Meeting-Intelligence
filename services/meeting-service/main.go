@@ -12,9 +12,7 @@ import (
 
 	meetingmigrations "github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/migrations"
 
-	meetinghttp "github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/handler"
 	meetingpg "github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/repository/postgres"
-	meetingroutes "github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/routes"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/storage/minio"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/usecase"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/config"
@@ -84,7 +82,7 @@ func main() {
 	}
 
 	repo := meetingpg.NewMeetingRepository(pool)
-	handler := meetinghttp.NewHandler(
+	handler := NewHandler(
 		usecase.NewCreateUploadIntentUseCase(repo, storage),
 		usecase.NewConfirmUploadUseCase(repo, storage),
 		usecase.NewGetMeetingUseCase(repo),
@@ -94,7 +92,7 @@ func main() {
 	)
 
 	srv := httpserver.New("meeting-service", log)
-	meetingroutes.RegisterRoutes(srv.Mux, handler)
+	RegisterRoutes(srv.Mux, handler)
 
 	addr := ":" + cfg.Port
 	log.Info("starting", "addr", addr)
