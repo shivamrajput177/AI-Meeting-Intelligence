@@ -8,26 +8,26 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/domain"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/entity"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/repository"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/apperr"
 )
 
 type CreateOrgUseCase struct {
-	repo domain.Repository
+	repo repository.Repository
 }
 
-func NewCreateOrgUseCase(repo domain.Repository) *CreateOrgUseCase {
+func NewCreateOrgUseCase(repo repository.Repository) *CreateOrgUseCase {
 	return &CreateOrgUseCase{repo: repo}
 }
 
-func (uc *CreateOrgUseCase) CreateOrg(ctx context.Context, in entity.CreateOrgInput) (*domain.Organization, error) {
+func (uc *CreateOrgUseCase) CreateOrg(ctx context.Context, in entity.CreateOrgInput) (*entity.Organization, error) {
 	name := strings.TrimSpace(in.Name)
 	if name == "" {
 		return nil, apperr.BadRequest("name is required")
 	}
 
-	org := &domain.Organization{
+	org := &entity.Organization{
 		ID:        uuid.NewString(),
 		Name:      name,
 		Slug:      slugify(name) + "-" + uuid.NewString()[:8],

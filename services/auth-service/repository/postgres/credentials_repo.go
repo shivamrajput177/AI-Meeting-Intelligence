@@ -1,4 +1,4 @@
-// Package postgres implements authsvc/domain's repositories against the
+// Package postgres implements repository's repositories against the
 // auth.* schema (see docs/architecture/database-schema.md). Unlike
 // user.users/meeting.meetings/etc., these tables have no Row-Level
 // Security policy in the schema design — they're only ever queried by a
@@ -16,7 +16,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/domain"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/entity"
+	"github.com/shivamrajput177/ai-meeting-intelligence/shared/apperr"
 )
 
 const (
@@ -32,7 +33,7 @@ func NewCredentialsRepository(pool *pgxpool.Pool) *CredentialsRepository {
 	return &CredentialsRepository{pool: pool}
 }
 
-func (r *CredentialsRepository) Create(ctx context.Context, c *domain.Credentials) error {
+func (r *CredentialsRepository) Create(ctx context.Context, c *entity.Credentials) error {
 	_, err := r.pool.Exec(ctx,
 		`INSERT INTO auth.credentials (user_id, org_id, password_hash, algo, updated_at)
 		 VALUES ($1, $2, $3, $4, $5)`,
@@ -41,15 +42,15 @@ func (r *CredentialsRepository) Create(ctx context.Context, c *domain.Credential
 	return err
 }
 
-func (r *CredentialsRepository) GetByUserID(ctx context.Context, orgID, userID string) (*domain.Credentials, error) {
-	var c domain.Credentials
+func (r *CredentialsRepository) GetByUserID(ctx context.Context, orgID, userID string) (*entity.Credentials, error) {
+	var c entity.Credentials
 	err := r.pool.QueryRow(ctx,
 		`SELECT user_id, org_id, password_hash, algo, failed_attempts, locked_until, updated_at
 		 FROM auth.credentials WHERE user_id = $1 AND org_id = $2`,
 		userID, orgID,
 	).Scan(&c.UserID, &c.OrgID, &c.PasswordHash, &c.Algo, &c.FailedAttempts, &c.LockedUntil, &c.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, domain.ErrInvalidCredentials
+		return nil, apperr.Unauthorized("invalid email or password")
 	}
 	return &c, err
 }

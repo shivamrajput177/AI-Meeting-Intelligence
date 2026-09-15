@@ -8,17 +8,18 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/domain"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/entity"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/repository"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/storage"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/apperr"
 )
 
 type CreateUploadIntentUseCase struct {
-	repo    domain.Repository
-	storage domain.ObjectStorage
+	repo    repository.Repository
+	storage storage.ObjectStorage
 }
 
-func NewCreateUploadIntentUseCase(repo domain.Repository, storage domain.ObjectStorage) *CreateUploadIntentUseCase {
+func NewCreateUploadIntentUseCase(repo repository.Repository, storage storage.ObjectStorage) *CreateUploadIntentUseCase {
 	return &CreateUploadIntentUseCase{repo: repo, storage: storage}
 }
 
@@ -43,9 +44,9 @@ func (uc *CreateUploadIntentUseCase) CreateUploadIntent(ctx context.Context, in 
 	}
 
 	now := time.Now()
-	meeting := &domain.Meeting{
+	meeting := &entity.Meeting{
 		ID: meetingID, OrgID: in.OrgID, Title: title, CreatedBy: in.CreatedBy,
-		Status: domain.StatusUploaded, SourceType: "upload", RecordingObjectKey: objectKey,
+		Status: entity.StatusUploaded, SourceType: "upload", RecordingObjectKey: objectKey,
 		CreatedAt: now, UpdatedAt: now,
 	}
 	if err := uc.repo.Create(ctx, meeting); err != nil {

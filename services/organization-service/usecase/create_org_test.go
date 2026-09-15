@@ -5,38 +5,38 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/domain"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/entity"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/usecase"
+	"github.com/shivamrajput177/ai-meeting-intelligence/shared/apperr"
 )
 
 // fakeRepository is an in-memory stand-in for the Postgres implementation
-// — this is the whole point of defining domain.Repository as an
+// — this is the whole point of defining repository.Repository as an
 // interface the usecase depends on (see
 // docs/architecture/folder-structure.md's Clean Architecture layering):
 // CreateOrgUseCase is fully testable with no real Postgres involved.
 type fakeRepository struct {
 	mu   sync.Mutex
-	orgs map[string]*domain.Organization
+	orgs map[string]*entity.Organization
 }
 
 func newFakeRepository() *fakeRepository {
-	return &fakeRepository{orgs: make(map[string]*domain.Organization)}
+	return &fakeRepository{orgs: make(map[string]*entity.Organization)}
 }
 
-func (f *fakeRepository) Create(_ context.Context, org *domain.Organization) error {
+func (f *fakeRepository) Create(_ context.Context, org *entity.Organization) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.orgs[org.ID] = org
 	return nil
 }
 
-func (f *fakeRepository) GetByID(_ context.Context, id string) (*domain.Organization, error) {
+func (f *fakeRepository) GetByID(_ context.Context, id string) (*entity.Organization, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	org, ok := f.orgs[id]
 	if !ok {
-		return nil, domain.ErrOrgNotFound
+		return nil, apperr.NotFound("organization not found")
 	}
 	return org, nil
 }
@@ -80,6 +80,6 @@ func TestGetOrgUseCase_GetOrg_NotFound(t *testing.T) {
 	uc := usecase.NewGetOrgUseCase(newFakeRepository())
 
 	if _, err := uc.GetOrg(context.Background(), "does-not-exist"); err == nil {
-		t.Fatal("expected domain.ErrOrgNotFound for an unknown id")
+		t.Fatal("expected a not-found error for an unknown id")
 	}
 }

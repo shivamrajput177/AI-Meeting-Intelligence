@@ -1,5 +1,5 @@
-// Package postgres implements usersvc/domain.Repository against the
-// user.* schema (see docs/architecture/database-schema.md).
+// Package postgres implements repository.Repository against the user.*
+// schema (see docs/architecture/database-schema.md).
 package postgres
 
 import (
@@ -9,7 +9,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/shivamrajput177/ai-meeting-intelligence/services/user-service/domain"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/user-service/entity"
+	"github.com/shivamrajput177/ai-meeting-intelligence/shared/apperr"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/dbx"
 )
 
@@ -21,7 +22,7 @@ func NewUserRepository(pool *pgxpool.Pool) *UserRepository {
 	return &UserRepository{pool: pool}
 }
 
-func (r *UserRepository) Create(ctx context.Context, user *domain.User) error {
+func (r *UserRepository) Create(ctx context.Context, user *entity.User) error {
 	return dbx.WithTenantTx(ctx, r.pool, user.OrgID, func(ctx context.Context, tx pgx.Tx) error {
 		_, err := tx.Exec(ctx,
 			`INSERT INTO "user".users (id, org_id, email, name, role, status, avatar_url, created_at, updated_at)
@@ -30,14 +31,14 @@ func (r *UserRepository) Create(ctx context.Context, user *domain.User) error {
 			user.CreatedAt, user.UpdatedAt,
 		)
 		if isUniqueViolation(err) {
-			return domain.ErrEmailInUse
+			return apperr.Conflict("email already registered for this organization")
 		}
 		return err
 	})
 }
 
-func (r *UserRepository) GetByID(ctx context.Context, orgID, userID string) (*domain.User, error) {
-	var user domain.User
+func (r *UserRepository) GetByID(ctx context.Context, orgID, userID string) (*entity.User, error) {
+	var user entity.User
 	err := dbx.WithTenantTx(ctx, r.pool, orgID, func(ctx context.Context, tx pgx.Tx) error {
 		return tx.QueryRow(ctx,
 			`SELECT id, org_id, email, name, role, status, COALESCE(avatar_url, ''), created_at, updated_at
@@ -47,7 +48,7 @@ func (r *UserRepository) GetByID(ctx context.Context, orgID, userID string) (*do
 			&user.AvatarURL, &user.CreatedAt, &user.UpdatedAt)
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, domain.ErrUserNotFound
+		return nil, apperr.NotFound("user not found")
 	}
 	if err != nil {
 		return nil, err
@@ -55,8 +56,8 @@ func (r *UserRepository) GetByID(ctx context.Context, orgID, userID string) (*do
 	return &user, nil
 }
 
-func (r *UserRepository) UpdateProfile(ctx context.Context, orgID, userID, name, avatarURL string) (*domain.User, error) {
-	var user domain.User
+func (r *UserRepository) UpdateProfile(ctx context.Context, orgID, userID, name, avatarURL string) (*entity.User, error) {
+	var user entity.User
 	err := dbx.WithTenantTx(ctx, r.pool, orgID, func(ctx context.Context, tx pgx.Tx) error {
 		return tx.QueryRow(ctx,
 			`UPDATE "user".users SET name = $1, avatar_url = $2, updated_at = now()
@@ -67,7 +68,7 @@ func (r *UserRepository) UpdateProfile(ctx context.Context, orgID, userID, name,
 			&user.AvatarURL, &user.CreatedAt, &user.UpdatedAt)
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, domain.ErrUserNotFound
+		return nil, apperr.NotFound("user not found")
 	}
 	if err != nil {
 		return nil, err
@@ -84,8 +85,8 @@ func (r *UserRepository) UpdateProfile(ctx context.Context, orgID, userID, name,
 // explicit, narrow, per-query opt-in, not a general RLS bypass. This
 // method must never be reachable from a public route — only from
 // /internal/users/lookup, itself guarded by RequireInternalToken.
-func (r *UserRepository) LookupByEmail(ctx context.Context, email string) ([]domain.EmailLookup, error) {
-	var results []domain.EmailLookup
+func (r *UserRepository) LookupByEmail(ctx context.Context, email string) ([]entity.EmailLookup, error) {
+	var results []entity.EmailLookup
 	err := dbx.WithBypassRLSTx(ctx, r.pool, func(ctx context.Context, tx pgx.Tx) error {
 		rows, err := tx.Query(ctx,
 			`SELECT id, org_id, role, status FROM "user".users WHERE email = $1 AND status = 'active'`,
@@ -97,7 +98,7 @@ func (r *UserRepository) LookupByEmail(ctx context.Context, email string) ([]dom
 		defer rows.Close()
 
 		for rows.Next() {
-			var l domain.EmailLookup
+			var l entity.EmailLookup
 			if err := rows.Scan(&l.UserID, &l.OrgID, &l.Role, &l.Status); err != nil {
 				return err
 			}
@@ -109,8 +110,9 @@ func (r *UserRepository) LookupByEmail(ctx context.Context, email string) ([]dom
 }
 
 // isUniqueViolation reports whether err is a Postgres unique-constraint
-// violation (SQLSTATE 23505) — used to turn a raw DB conflict into
-// domain.ErrEmailInUse instead of leaking the constraint name.
+// violation (SQLSTATE 23505) — used to turn a raw DB conflict into a
+// clean "email already registered" error instead of leaking the
+// constraint name.
 func isUniqueViolation(err error) bool {
 	var pgErr interface{ SQLState() string }
 	return errors.As(err, &pgErr) && pgErr.SQLState() == "23505"

@@ -1,13 +1,13 @@
-package domain
-
-import "context"
-
-// OrgClient and UserClient are the ports Auth Service's signup usecase
-// calls through to create the org+owner rows that actually live in
-// Organization/User Service's own schemas. Auth Service owns neither
-// table — see docs/architecture/microservices.md §2's schema list — so
-// signup necessarily orchestrates two other services' REST APIs rather
-// than writing to their tables directly.
+// Package client defines the OrgClient/UserClient ports Auth Service's
+// signup usecase calls through to create the org+owner rows that
+// actually live in Organization/User Service's own schemas. Auth
+// Service owns neither table — see docs/architecture/microservices.md
+// §2's schema list — so signup necessarily orchestrates two other
+// services' REST APIs rather than writing to their tables directly.
+// client/http, right below this package in the same tree, implements
+// both against the real internal REST APIs — keeping the interfaces
+// here instead of off in some unrelated package is just where they
+// belong, next to their one real implementation.
 //
 // Known limitation, called out rather than hidden: this is a multi-step
 // operation with no distributed transaction across three services
@@ -19,21 +19,19 @@ import "context"
 // exactly the kind of thing docs/ROADMAP.md flags as a good interview
 // topic ("saga-like multi-step async workflows"), worth naming explicitly
 // rather than pretending it isn't a gap.
+package client
+
+import (
+	"context"
+
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/entity"
+)
+
 type OrgClient interface {
 	CreateOrg(ctx context.Context, name string) (orgID string, err error)
 }
 
 type UserClient interface {
 	CreateUser(ctx context.Context, orgID, email, name, role string) (userID string, err error)
-	LookupByEmail(ctx context.Context, email string) ([]EmailMatch, error)
-}
-
-// EmailMatch mirrors usersvc/domain.EmailLookup — duplicated rather than
-// imported so Auth Service's domain package has zero dependency on User
-// Service's internals, matching every other service boundary in this repo.
-type EmailMatch struct {
-	UserID string
-	OrgID  string
-	Role   string
-	Status string
+	LookupByEmail(ctx context.Context, email string) ([]entity.EmailMatch, error)
 }

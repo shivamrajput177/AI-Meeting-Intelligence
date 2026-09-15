@@ -1,5 +1,7 @@
-// Package entity holds Auth Service's plain data structs — the JSON wire
-// shapes at this service's HTTP boundaries, and the plain
+// Package entity holds Auth Service's plain data structs: its own
+// internal model (Credentials, RefreshToken, PasswordResetToken,
+// EmailMatch — what repository/client read and usecase operates on),
+// the JSON wire shapes at this service's HTTP boundaries, and the plain
 // input/output structs its usecase layer passes around internally.
 // Nothing here has behavior (no methods, just fields, and json tags
 // where the struct crosses the wire): it's data, not a class, which is
@@ -7,6 +9,60 @@
 // hold the code that does something with an entity, this package only
 // describes its shape.
 package entity
+
+import "time"
+
+// RoleOwner mirrors usersvc/entity.RoleOwner. Duplicated, not imported —
+// Auth Service never imports another service's Go packages, only calls
+// its REST API (see client.OrgClient/UserClient) — that's what keeps
+// services independently deployable in practice, not just on paper.
+const RoleOwner = "owner"
+
+// Credentials, RefreshToken, and PasswordResetToken are this service's
+// own internal model — what repository reads out of Postgres and
+// usecase operates on. None are JSON-tagged: they never cross the wire
+// directly.
+type Credentials struct {
+	UserID         string
+	OrgID          string
+	PasswordHash   string
+	Algo           string
+	FailedAttempts int
+	LockedUntil    *time.Time
+	UpdatedAt      time.Time
+}
+
+type RefreshToken struct {
+	ID         string
+	UserID     string
+	OrgID      string
+	TokenHash  string
+	IssuedAt   time.Time
+	ExpiresAt  time.Time
+	RevokedAt  *time.Time
+	ReplacedBy *string
+}
+
+type PasswordResetToken struct {
+	ID        string
+	UserID    string
+	OrgID     string
+	TokenHash string
+	ExpiresAt time.Time
+	UsedAt    *time.Time
+}
+
+// EmailMatch mirrors usersvc/entity.EmailLookup — duplicated rather than
+// imported so Auth Service has zero dependency on User Service's
+// internals, matching every other service boundary in this repo. It's
+// what client.UserClient.LookupByEmail returns, over the wire from User
+// Service's own /internal/users/lookup route.
+type EmailMatch struct {
+	UserID string
+	OrgID  string
+	Role   string
+	Status string
+}
 
 // --- handler/handler.go: this service's own REST API ---
 
@@ -108,9 +164,9 @@ type LoginInput struct {
 
 type RefreshInput struct {
 	// OrgID is required because refresh tokens are looked up scoped to an
-	// org (see domain.RefreshTokenRepository) — the client must have kept
-	// it from its last login/signup response, alongside the refresh token
-	// itself.
+	// org (see repository.RefreshTokenRepository) — the client must have
+	// kept it from its last login/signup response, alongside the refresh
+	// token itself.
 	OrgID        string
 	RefreshToken string
 	// Role is carried by the client from its last token pair. Phase 1

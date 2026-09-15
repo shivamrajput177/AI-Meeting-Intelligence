@@ -7,7 +7,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/domain"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/entity"
+	"github.com/shivamrajput177/ai-meeting-intelligence/shared/apperr"
 )
 
 type PasswordResetRepository struct {
@@ -18,7 +19,7 @@ func NewPasswordResetRepository(pool *pgxpool.Pool) *PasswordResetRepository {
 	return &PasswordResetRepository{pool: pool}
 }
 
-func (r *PasswordResetRepository) Create(ctx context.Context, t *domain.PasswordResetToken) error {
+func (r *PasswordResetRepository) Create(ctx context.Context, t *entity.PasswordResetToken) error {
 	_, err := r.pool.Exec(ctx,
 		`INSERT INTO auth.password_reset_tokens (id, user_id, org_id, token_hash, expires_at)
 		 VALUES ($1, $2, $3, $4, $5)`,
@@ -27,15 +28,15 @@ func (r *PasswordResetRepository) Create(ctx context.Context, t *domain.Password
 	return err
 }
 
-func (r *PasswordResetRepository) GetByHash(ctx context.Context, tokenHash string) (*domain.PasswordResetToken, error) {
-	var t domain.PasswordResetToken
+func (r *PasswordResetRepository) GetByHash(ctx context.Context, tokenHash string) (*entity.PasswordResetToken, error) {
+	var t entity.PasswordResetToken
 	err := r.pool.QueryRow(ctx,
 		`SELECT id, user_id, org_id, token_hash, expires_at, used_at
 		 FROM auth.password_reset_tokens WHERE token_hash = $1`,
 		tokenHash,
 	).Scan(&t.ID, &t.UserID, &t.OrgID, &t.TokenHash, &t.ExpiresAt, &t.UsedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, domain.ErrInvalidResetToken
+		return nil, apperr.BadRequest("invalid or expired reset token")
 	}
 	return &t, err
 }

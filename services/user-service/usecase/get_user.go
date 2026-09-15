@@ -3,17 +3,18 @@ package usecase
 import (
 	"context"
 
-	"github.com/shivamrajput177/ai-meeting-intelligence/services/user-service/domain"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/user-service/entity"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/user-service/repository"
 )
 
 type GetUserUseCase struct {
-	repo domain.Repository
+	repo repository.Repository
 }
 
-func NewGetUserUseCase(repo domain.Repository) *GetUserUseCase {
+func NewGetUserUseCase(repo repository.Repository) *GetUserUseCase {
 	return &GetUserUseCase{repo: repo}
 }
 
-func (uc *GetUserUseCase) GetUser(ctx context.Context, orgID, userID string) (*domain.User, error) {
+func (uc *GetUserUseCase) GetUser(ctx context.Context, orgID, userID string) (*entity.User, error) {
 	return uc.repo.GetByID(ctx, orgID, userID)
 }

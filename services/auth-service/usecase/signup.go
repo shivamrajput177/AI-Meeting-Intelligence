@@ -5,20 +5,21 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/domain"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/client"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/entity"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/repository"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/apperr"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/passwordutil"
 )
 
 type SignupUseCase struct {
-	orgClient   domain.OrgClient
-	userClient  domain.UserClient
-	credentials domain.CredentialsRepository
+	orgClient   client.OrgClient
+	userClient  client.UserClient
+	credentials repository.CredentialsRepository
 	tokenIssuer *TokenIssuer
 }
 
-func NewSignupUseCase(orgClient domain.OrgClient, userClient domain.UserClient, credentials domain.CredentialsRepository, tokenIssuer *TokenIssuer) *SignupUseCase {
+func NewSignupUseCase(orgClient client.OrgClient, userClient client.UserClient, credentials repository.CredentialsRepository, tokenIssuer *TokenIssuer) *SignupUseCase {
 	return &SignupUseCase{orgClient: orgClient, userClient: userClient, credentials: credentials, tokenIssuer: tokenIssuer}
 }
 
@@ -43,7 +44,7 @@ func (uc *SignupUseCase) Signup(ctx context.Context, in entity.SignupInput) (*en
 		return nil, err
 	}
 
-	userID, err := uc.userClient.CreateUser(ctx, orgID, email, name, domain.RoleOwner)
+	userID, err := uc.userClient.CreateUser(ctx, orgID, email, name, entity.RoleOwner)
 	if err != nil {
 		return nil, err
 	}
@@ -52,11 +53,11 @@ func (uc *SignupUseCase) Signup(ctx context.Context, in entity.SignupInput) (*en
 	if err != nil {
 		return nil, apperr.Internal("hash password").Wrap(err)
 	}
-	if err := uc.credentials.Create(ctx, &domain.Credentials{
+	if err := uc.credentials.Create(ctx, &entity.Credentials{
 		UserID: userID, OrgID: orgID, PasswordHash: hash, Algo: "argon2id", UpdatedAt: time.Now(),
 	}); err != nil {
 		return nil, apperr.Internal("store credentials").Wrap(err)
 	}
 
-	return uc.tokenIssuer.Issue(ctx, userID, orgID, domain.RoleOwner)
+	return uc.tokenIssuer.Issue(ctx, userID, orgID, entity.RoleOwner)
 }

@@ -3,17 +3,17 @@ package usecase
 import (
 	"context"
 
-	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/domain"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/entity"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/repository"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/apperr"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/jwtutil"
 )
 
 type LogoutUseCase struct {
-	refreshRepo domain.RefreshTokenRepository
+	refreshRepo repository.RefreshTokenRepository
 }
 
-func NewLogoutUseCase(refreshRepo domain.RefreshTokenRepository) *LogoutUseCase {
+func NewLogoutUseCase(refreshRepo repository.RefreshTokenRepository) *LogoutUseCase {
 	return &LogoutUseCase{refreshRepo: refreshRepo}
 }
 

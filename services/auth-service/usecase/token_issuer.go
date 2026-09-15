@@ -6,8 +6,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/domain"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/entity"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/repository"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/apperr"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/jwtutil"
 )
@@ -19,10 +19,10 @@ type TokenIssuer struct {
 	secret      []byte
 	accessTTL   time.Duration
 	refreshTTL  time.Duration
-	refreshRepo domain.RefreshTokenRepository
+	refreshRepo repository.RefreshTokenRepository
 }
 
-func NewTokenIssuer(secret []byte, accessTTL, refreshTTL time.Duration, refreshRepo domain.RefreshTokenRepository) *TokenIssuer {
+func NewTokenIssuer(secret []byte, accessTTL, refreshTTL time.Duration, refreshRepo repository.RefreshTokenRepository) *TokenIssuer {
 	return &TokenIssuer{secret: secret, accessTTL: accessTTL, refreshTTL: refreshTTL, refreshRepo: refreshRepo}
 }
 
@@ -51,7 +51,7 @@ func (ti *TokenIssuer) issue(ctx context.Context, userID, orgID, role string, re
 	}
 	newID := uuid.NewString()
 	now := time.Now()
-	if err := ti.refreshRepo.Create(ctx, &domain.RefreshToken{
+	if err := ti.refreshRepo.Create(ctx, &entity.RefreshToken{
 		ID: newID, UserID: userID, OrgID: orgID, TokenHash: hash,
 		IssuedAt: now, ExpiresAt: now.Add(ti.refreshTTL),
 	}); err != nil {

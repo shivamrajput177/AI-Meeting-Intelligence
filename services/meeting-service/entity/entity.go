@@ -1,12 +1,59 @@
-// Package entity holds Meeting Service's plain data structs — the JSON
-// wire shapes at this service's REST boundary, and the plain
-// input/output structs its usecase layer passes around internally.
-// Nothing here has behavior (no methods, just fields, and json tags
-// where the struct crosses the wire): it's data, not a class, which is
-// what keeps it out of handler/ and usecase/ — those packages hold the
-// code that does something with an entity, this package only describes
-// its shape.
+// Package entity holds Meeting Service's plain data structs: its own
+// internal model (Meeting, ListFilter — what repository reads out of
+// Postgres and usecase operates on), the JSON wire shapes at this
+// service's REST boundary, and the plain input/output structs its
+// usecase layer passes around internally. Nothing here has behavior (no
+// methods, just fields, and json tags where the struct crosses the
+// wire): it's data, not a class, which is what keeps it out of
+// handler/ and usecase/ — those packages hold the code that does
+// something with an entity, this package only describes its shape.
 package entity
+
+import "time"
+
+// Status values. Phase 1 only ever produces "uploaded" — the rest of the
+// pipeline (transcribing -> ... -> completed) doesn't exist until
+// Phase 2's Kafka-driven services land. See PATCH /meetings/{id}/status
+// for the manual override docs/ROADMAP.md Phase 1 calls "a debug
+// endpoint," used to simulate the pipeline advancing before it's real.
+const (
+	StatusUploaded     = "uploaded"
+	StatusTranscribing = "transcribing"
+	StatusTranscribed  = "transcribed"
+	StatusSummarizing  = "summarizing"
+	StatusSummarized   = "summarized"
+	StatusCompleted    = "completed"
+	StatusFailed       = "failed"
+)
+
+var ValidStatuses = map[string]bool{
+	StatusUploaded: true, StatusTranscribing: true, StatusTranscribed: true,
+	StatusSummarizing: true, StatusSummarized: true, StatusCompleted: true, StatusFailed: true,
+}
+
+// Meeting is this service's own internal model — what repository reads
+// out of Postgres and usecase operates on. Not JSON-tagged: it never
+// crosses the wire directly, handler.go always reshapes it into a
+// MeetingResponse first (see toMeetingResponse).
+type Meeting struct {
+	ID                 string
+	OrgID              string
+	Title              string
+	CreatedBy          string
+	Status             string
+	SourceType         string
+	RecordingObjectKey string
+	DurationSeconds    *int
+	StartedAt          *time.Time
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+}
+
+// ListFilter is repository.Repository.List's pagination input.
+type ListFilter struct {
+	Page     int
+	PageSize int
+}
 
 type MeetingResponse struct {
 	ID              string  `json:"id"`

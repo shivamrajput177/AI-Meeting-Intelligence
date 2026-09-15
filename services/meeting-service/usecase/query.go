@@ -3,24 +3,27 @@ package usecase
 import (
 	"context"
 
-	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/domain"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/entity"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/repository"
 )
 
-type GetMeetingUseCase struct{ repo domain.Repository }
+type GetMeetingUseCase struct{ repo repository.Repository }
 
-func NewGetMeetingUseCase(repo domain.Repository) *GetMeetingUseCase { return &GetMeetingUseCase{repo} }
+func NewGetMeetingUseCase(repo repository.Repository) *GetMeetingUseCase {
+	return &GetMeetingUseCase{repo}
+}
 
-func (uc *GetMeetingUseCase) GetMeeting(ctx context.Context, orgID, id string) (*domain.Meeting, error) {
+func (uc *GetMeetingUseCase) GetMeeting(ctx context.Context, orgID, id string) (*entity.Meeting, error) {
 	return uc.repo.GetByID(ctx, orgID, id)
 }
 
-type ListMeetingsUseCase struct{ repo domain.Repository }
+type ListMeetingsUseCase struct{ repo repository.Repository }
 
-func NewListMeetingsUseCase(repo domain.Repository) *ListMeetingsUseCase {
+func NewListMeetingsUseCase(repo repository.Repository) *ListMeetingsUseCase {
 	return &ListMeetingsUseCase{repo}
 }
 
-func (uc *ListMeetingsUseCase) ListMeetings(ctx context.Context, orgID string, filter domain.ListFilter) ([]*domain.Meeting, int, error) {
+func (uc *ListMeetingsUseCase) ListMeetings(ctx context.Context, orgID string, filter entity.ListFilter) ([]*entity.Meeting, int, error) {
 	if filter.Page < 1 {
 		filter.Page = 1
 	}

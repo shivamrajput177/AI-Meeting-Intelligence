@@ -1,4 +1,4 @@
-// Package postgres implements orgsvc/domain.Repository against the org.*
+// Package postgres implements repository.Repository against the org.*
 // schema (see docs/architecture/database-schema.md). org.organizations is
 // the tenant root table — it has no org_id column of its own to apply RLS
 // against — so, unlike every other repository in this repo, there is no
@@ -12,7 +12,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/domain"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/entity"
+	"github.com/shivamrajput177/ai-meeting-intelligence/shared/apperr"
 )
 
 type OrgRepository struct {
@@ -23,7 +24,7 @@ func NewOrgRepository(pool *pgxpool.Pool) *OrgRepository {
 	return &OrgRepository{pool: pool}
 }
 
-func (r *OrgRepository) Create(ctx context.Context, org *domain.Organization) error {
+func (r *OrgRepository) Create(ctx context.Context, org *entity.Organization) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -55,14 +56,14 @@ func (r *OrgRepository) Create(ctx context.Context, org *domain.Organization) er
 	return tx.Commit(ctx)
 }
 
-func (r *OrgRepository) GetByID(ctx context.Context, id string) (*domain.Organization, error) {
-	var org domain.Organization
+func (r *OrgRepository) GetByID(ctx context.Context, id string) (*entity.Organization, error) {
+	var org entity.Organization
 	err := r.pool.QueryRow(ctx,
 		`SELECT id, name, slug, plan, status, created_at FROM org.organizations WHERE id = $1`,
 		id,
 	).Scan(&org.ID, &org.Name, &org.Slug, &org.Plan, &org.Status, &org.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, domain.ErrOrgNotFound
+		return nil, apperr.NotFound("organization not found")
 	}
 	if err != nil {
 		return nil, err

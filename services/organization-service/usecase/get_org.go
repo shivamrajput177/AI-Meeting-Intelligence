@@ -3,17 +3,18 @@ package usecase
 import (
 	"context"
 
-	"github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/domain"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/entity"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/repository"
 )
 
 type GetOrgUseCase struct {
-	repo domain.Repository
+	repo repository.Repository
 }
 
-func NewGetOrgUseCase(repo domain.Repository) *GetOrgUseCase {
+func NewGetOrgUseCase(repo repository.Repository) *GetOrgUseCase {
 	return &GetOrgUseCase{repo: repo}
 }
 
-func (uc *GetOrgUseCase) GetOrg(ctx context.Context, id string) (*domain.Organization, error) {
+func (uc *GetOrgUseCase) GetOrg(ctx context.Context, id string) (*entity.Organization, error) {
 	return uc.repo.GetByID(ctx, id)
 }

@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/domain"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/entity"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/usecase"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/apperr"
@@ -39,7 +38,7 @@ func NewHandler(
 	}
 }
 
-func toMeetingResponse(m *domain.Meeting) entity.MeetingResponse {
+func toMeetingResponse(m *entity.Meeting) entity.MeetingResponse {
 	resp := entity.MeetingResponse{
 		ID: m.ID, OrgID: m.OrgID, Title: m.Title, CreatedBy: m.CreatedBy,
 		Status: m.Status, SourceType: m.SourceType, DurationSeconds: m.DurationSeconds,
@@ -107,7 +106,7 @@ func (h *Handler) ListMeetings(w http.ResponseWriter, r *http.Request) error {
 		pageSize = 20
 	}
 
-	items, total, err := h.listMeetings.ListMeetings(r.Context(), reqctx.OrgID(r.Context()), domain.ListFilter{Page: page, PageSize: pageSize})
+	items, total, err := h.listMeetings.ListMeetings(r.Context(), reqctx.OrgID(r.Context()), entity.ListFilter{Page: page, PageSize: pageSize})
 	if err != nil {
 		return err
 	}

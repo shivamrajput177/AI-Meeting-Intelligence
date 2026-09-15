@@ -7,7 +7,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/domain"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/client"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/entity"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/repository"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/apperr"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/jwtutil"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/logger"
@@ -23,13 +25,13 @@ const resetTokenTTL = 1 * time.Hour
 // flag, never set in the public demo deployment), returns it in the
 // response so the flow is testable end-to-end without a real mailbox.
 type RequestPasswordResetUseCase struct {
-	userClient     domain.UserClient
-	resetRepo      domain.PasswordResetRepository
+	userClient     client.UserClient
+	resetRepo      repository.PasswordResetRepository
 	log            *logger.Logger
 	devExposeToken bool
 }
 
-func NewRequestPasswordResetUseCase(userClient domain.UserClient, resetRepo domain.PasswordResetRepository, log *logger.Logger, devExposeToken bool) *RequestPasswordResetUseCase {
+func NewRequestPasswordResetUseCase(userClient client.UserClient, resetRepo repository.PasswordResetRepository, log *logger.Logger, devExposeToken bool) *RequestPasswordResetUseCase {
 	return &RequestPasswordResetUseCase{userClient: userClient, resetRepo: resetRepo, log: log, devExposeToken: devExposeToken}
 }
 
@@ -53,7 +55,7 @@ func (uc *RequestPasswordResetUseCase) RequestPasswordReset(ctx context.Context,
 		return "", apperr.Internal("generate reset token").Wrap(genErr)
 	}
 
-	if err := uc.resetRepo.Create(ctx, &domain.PasswordResetToken{
+	if err := uc.resetRepo.Create(ctx, &entity.PasswordResetToken{
 		ID: uuid.NewString(), UserID: userID, OrgID: orgID, TokenHash: hash,
 		ExpiresAt: time.Now().Add(resetTokenTTL),
 	}); err != nil {
@@ -69,11 +71,11 @@ func (uc *RequestPasswordResetUseCase) RequestPasswordReset(ctx context.Context,
 }
 
 type ConfirmPasswordResetUseCase struct {
-	resetRepo   domain.PasswordResetRepository
-	credentials domain.CredentialsRepository
+	resetRepo   repository.PasswordResetRepository
+	credentials repository.CredentialsRepository
 }
 
-func NewConfirmPasswordResetUseCase(resetRepo domain.PasswordResetRepository, credentials domain.CredentialsRepository) *ConfirmPasswordResetUseCase {
+func NewConfirmPasswordResetUseCase(resetRepo repository.PasswordResetRepository, credentials repository.CredentialsRepository) *ConfirmPasswordResetUseCase {
 	return &ConfirmPasswordResetUseCase{resetRepo: resetRepo, credentials: credentials}
 }
 
@@ -85,7 +87,7 @@ func (uc *ConfirmPasswordResetUseCase) ConfirmPasswordReset(ctx context.Context,
 	hash := jwtutil.HashRefreshToken(token)
 	rt, err := uc.resetRepo.GetByHash(ctx, hash)
 	if err != nil || rt.UsedAt != nil || rt.ExpiresAt.Before(time.Now()) {
-		return domain.ErrInvalidResetToken
+		return apperr.BadRequest("invalid or expired reset token")
 	}
 
 	newHash, err := passwordutil.Hash(newPassword)

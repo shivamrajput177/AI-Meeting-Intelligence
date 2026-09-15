@@ -1,4 +1,4 @@
-// Package minio implements meetingsvc/domain.ObjectStorage against MinIO
+// Package minio implements storage.ObjectStorage against MinIO
 // — see docs/architecture/microservices.md §5 and the "What is MinIO"
 // explanation in the project's design docs: an S3-compatible, self-hosted
 // object store for the actual recording bytes, so Postgres only ever

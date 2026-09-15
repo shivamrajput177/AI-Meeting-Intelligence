@@ -3,22 +3,25 @@ package usecase
 import (
 	"context"
 
-	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/domain"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/entity"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/repository"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/storage"
+	"github.com/shivamrajput177/ai-meeting-intelligence/shared/apperr"
 )
 
 // UpdateStatusUseCase is the "debug endpoint" docs/ROADMAP.md Phase 1
 // calls for manually flipping a meeting's status, standing in for the
 // Kafka-driven status machine that doesn't exist until Phase 2 — see
 // docs/architecture/microservices.md §5.
-type UpdateStatusUseCase struct{ repo domain.Repository }
+type UpdateStatusUseCase struct{ repo repository.Repository }
 
-func NewUpdateStatusUseCase(repo domain.Repository) *UpdateStatusUseCase {
+func NewUpdateStatusUseCase(repo repository.Repository) *UpdateStatusUseCase {
 	return &UpdateStatusUseCase{repo}
 }
 
-func (uc *UpdateStatusUseCase) UpdateStatus(ctx context.Context, orgID, id, status string) (*domain.Meeting, error) {
-	if !domain.ValidStatuses[status] {
-		return nil, domain.ErrInvalidStatus
+func (uc *UpdateStatusUseCase) UpdateStatus(ctx context.Context, orgID, id, status string) (*entity.Meeting, error) {
+	if !entity.ValidStatuses[status] {
+		return nil, apperr.BadRequest("invalid status")
 	}
 	if err := uc.repo.UpdateStatus(ctx, orgID, id, status); err != nil {
 		return nil, err
@@ -27,11 +30,11 @@ func (uc *UpdateStatusUseCase) UpdateStatus(ctx context.Context, orgID, id, stat
 }
 
 type DeleteMeetingUseCase struct {
-	repo    domain.Repository
-	storage domain.ObjectStorage
+	repo    repository.Repository
+	storage storage.ObjectStorage
 }
 
-func NewDeleteMeetingUseCase(repo domain.Repository, storage domain.ObjectStorage) *DeleteMeetingUseCase {
+func NewDeleteMeetingUseCase(repo repository.Repository, storage storage.ObjectStorage) *DeleteMeetingUseCase {
 	return &DeleteMeetingUseCase{repo: repo, storage: storage}
 }
 

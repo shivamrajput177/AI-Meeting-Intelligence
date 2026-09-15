@@ -13,7 +13,7 @@ import (
 
 	authmigrations "github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/migrations"
 
-	authclient "github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/client"
+	authclient "github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/client/http"
 	authpg "github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/repository/postgres"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/usecase"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/config"

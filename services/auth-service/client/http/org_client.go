@@ -1,8 +1,7 @@
-// Package client implements authsvc/domain's OrgClient/UserClient ports
-// against the real internal REST APIs, via the shared
-// shared/httpclient — this is the concrete "how" behind the
-// abstract ports the usecase layer depends on.
-package client
+// Package http implements client.OrgClient/UserClient against the real
+// internal REST APIs, via the shared shared/httpclient — this is the
+// concrete "how" behind the abstract ports the usecase layer depends on.
+package http
 
 import (
 	"context"

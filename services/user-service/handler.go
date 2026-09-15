@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/shivamrajput177/ai-meeting-intelligence/services/user-service/domain"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/user-service/entity"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/user-service/usecase"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/apperr"
@@ -37,7 +36,7 @@ func NewHandler(
 	}
 }
 
-func toUserResponse(u *domain.User) entity.UserResponse {
+func toUserResponse(u *entity.User) entity.UserResponse {
 	return entity.UserResponse{
 		ID: u.ID, OrgID: u.OrgID, Email: u.Email, Name: u.Name,
 		Role: u.Role, Status: u.Status, AvatarURL: u.AvatarURL,
@@ -71,7 +70,7 @@ func (h *Handler) LookupByEmail(w http.ResponseWriter, r *http.Request) error {
 	}
 	resp := entity.LookupResponse{}
 	for _, m := range matches {
-		resp.Matches = append(resp.Matches, entity.LookupMatch{UserID: m.UserID, OrgID: m.OrgID, Role: m.Role, Status: m.Status})
+		resp.Matches = append(resp.Matches, entity.LookupMatch(m))
 	}
 	httpserver.JSON(w, http.StatusOK, resp)
 	return nil

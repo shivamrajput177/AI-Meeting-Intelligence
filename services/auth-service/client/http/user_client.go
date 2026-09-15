@@ -1,10 +1,9 @@
-package client
+package http
 
 import (
 	"context"
 	"net/url"
 
-	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/domain"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/entity"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/httpclient"
 )
@@ -26,15 +25,15 @@ func (c *UserClient) CreateUser(ctx context.Context, orgID, email, name, role st
 	return resp.ID, nil
 }
 
-func (c *UserClient) LookupByEmail(ctx context.Context, email string) ([]domain.EmailMatch, error) {
+func (c *UserClient) LookupByEmail(ctx context.Context, email string) ([]entity.EmailMatch, error) {
 	var resp entity.LookupResponse
 	path := "/internal/users/lookup?email=" + url.QueryEscape(email)
 	if err := c.http.Do(ctx, "GET", path, nil, &resp); err != nil {
 		return nil, err
 	}
-	matches := make([]domain.EmailMatch, len(resp.Matches))
+	matches := make([]entity.EmailMatch, len(resp.Matches))
 	for i, m := range resp.Matches {
-		matches[i] = domain.EmailMatch{UserID: m.UserID, OrgID: m.OrgID, Role: m.Role, Status: m.Status}
+		matches[i] = entity.EmailMatch(m)
 	}
 	return matches, nil
 }

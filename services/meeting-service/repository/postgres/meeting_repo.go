@@ -1,4 +1,4 @@
-// Package postgres implements meetingsvc/domain.Repository against the
+// Package postgres implements repository.Repository against the
 // meeting.* schema (see docs/architecture/database-schema.md).
 package postgres
 
@@ -9,7 +9,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/domain"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/entity"
+	"github.com/shivamrajput177/ai-meeting-intelligence/shared/apperr"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/dbx"
 )
 
@@ -21,7 +22,7 @@ func NewMeetingRepository(pool *pgxpool.Pool) *MeetingRepository {
 	return &MeetingRepository{pool: pool}
 }
 
-func (r *MeetingRepository) Create(ctx context.Context, m *domain.Meeting) error {
+func (r *MeetingRepository) Create(ctx context.Context, m *entity.Meeting) error {
 	return dbx.WithTenantTx(ctx, r.pool, m.OrgID, func(ctx context.Context, tx pgx.Tx) error {
 		_, err := tx.Exec(ctx,
 			`INSERT INTO meeting.meetings
@@ -34,12 +35,12 @@ func (r *MeetingRepository) Create(ctx context.Context, m *domain.Meeting) error
 	})
 }
 
-func scanMeeting(row pgx.Row) (*domain.Meeting, error) {
-	var m domain.Meeting
+func scanMeeting(row pgx.Row) (*entity.Meeting, error) {
+	var m entity.Meeting
 	err := row.Scan(&m.ID, &m.OrgID, &m.Title, &m.CreatedBy, &m.Status, &m.SourceType,
 		&m.RecordingObjectKey, &m.DurationSeconds, &m.StartedAt, &m.CreatedAt, &m.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, domain.ErrMeetingNotFound
+		return nil, apperr.NotFound("meeting not found")
 	}
 	return &m, err
 }
@@ -47,8 +48,8 @@ func scanMeeting(row pgx.Row) (*domain.Meeting, error) {
 const selectMeetingCols = `id, org_id, title, created_by, status, source_type, recording_object_key,
 	duration_seconds, started_at, created_at, updated_at`
 
-func (r *MeetingRepository) GetByID(ctx context.Context, orgID, id string) (*domain.Meeting, error) {
-	var meeting *domain.Meeting
+func (r *MeetingRepository) GetByID(ctx context.Context, orgID, id string) (*entity.Meeting, error) {
+	var meeting *entity.Meeting
 	err := dbx.WithTenantTx(ctx, r.pool, orgID, func(ctx context.Context, tx pgx.Tx) error {
 		var scanErr error
 		meeting, scanErr = scanMeeting(tx.QueryRow(ctx,
@@ -58,8 +59,8 @@ func (r *MeetingRepository) GetByID(ctx context.Context, orgID, id string) (*dom
 	return meeting, err
 }
 
-func (r *MeetingRepository) List(ctx context.Context, orgID string, filter domain.ListFilter) ([]*domain.Meeting, int, error) {
-	var items []*domain.Meeting
+func (r *MeetingRepository) List(ctx context.Context, orgID string, filter entity.ListFilter) ([]*entity.Meeting, int, error) {
+	var items []*entity.Meeting
 	var total int
 	err := dbx.WithTenantTx(ctx, r.pool, orgID, func(ctx context.Context, tx pgx.Tx) error {
 		if err := tx.QueryRow(ctx, `SELECT count(*) FROM meeting.meetings`).Scan(&total); err != nil {
@@ -96,7 +97,7 @@ func (r *MeetingRepository) UpdateStatus(ctx context.Context, orgID, id, status 
 			return err
 		}
 		if tag.RowsAffected() == 0 {
-			return domain.ErrMeetingNotFound
+			return apperr.NotFound("meeting not found")
 		}
 		_, err = tx.Exec(ctx,
 			`INSERT INTO meeting.status_history (meeting_id, status, changed_at) VALUES ($1, $2, now())`,
@@ -112,7 +113,7 @@ func (r *MeetingRepository) Touch(ctx context.Context, orgID, id string) error {
 			return err
 		}
 		if tag.RowsAffected() == 0 {
-			return domain.ErrMeetingNotFound
+			return apperr.NotFound("meeting not found")
 		}
 		return nil
 	})
@@ -125,7 +126,7 @@ func (r *MeetingRepository) Delete(ctx context.Context, orgID, id string) error 
 			return err
 		}
 		if tag.RowsAffected() == 0 {
-			return domain.ErrMeetingNotFound
+			return apperr.NotFound("meeting not found")
 		}
 		return nil
 	})

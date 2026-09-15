@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/domain"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/entity"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/usecase"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/apperr"
@@ -64,7 +63,7 @@ func (h *Handler) GetOrg(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func toOrgResponse(o *domain.Organization) entity.OrgResponse {
+func toOrgResponse(o *entity.Organization) entity.OrgResponse {
 	return entity.OrgResponse{
 		ID:        o.ID,
 		Name:      o.Name,
