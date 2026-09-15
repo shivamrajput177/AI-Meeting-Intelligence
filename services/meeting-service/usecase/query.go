@@ -10,7 +10,7 @@ type GetMeetingUseCase struct{ repo domain.Repository }
 
 func NewGetMeetingUseCase(repo domain.Repository) *GetMeetingUseCase { return &GetMeetingUseCase{repo} }
 
-func (uc *GetMeetingUseCase) Execute(ctx context.Context, orgID, id string) (*domain.Meeting, error) {
+func (uc *GetMeetingUseCase) GetMeeting(ctx context.Context, orgID, id string) (*domain.Meeting, error) {
 	return uc.repo.GetByID(ctx, orgID, id)
 }
 
@@ -20,7 +20,7 @@ func NewListMeetingsUseCase(repo domain.Repository) *ListMeetingsUseCase {
 	return &ListMeetingsUseCase{repo}
 }
 
-func (uc *ListMeetingsUseCase) Execute(ctx context.Context, orgID string, filter domain.ListFilter) ([]*domain.Meeting, int, error) {
+func (uc *ListMeetingsUseCase) ListMeetings(ctx context.Context, orgID string, filter domain.ListFilter) ([]*domain.Meeting, int, error) {
 	if filter.Page < 1 {
 		filter.Page = 1
 	}

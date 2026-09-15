@@ -19,7 +19,7 @@ func NewRefreshUseCase(refreshRepo domain.RefreshTokenRepository, tokenIssuer *T
 	return &RefreshUseCase{refreshRepo: refreshRepo, tokenIssuer: tokenIssuer}
 }
 
-func (uc *RefreshUseCase) Execute(ctx context.Context, in entity.RefreshInput) (*entity.TokenPair, error) {
+func (uc *RefreshUseCase) Refresh(ctx context.Context, in entity.RefreshInput) (*entity.TokenPair, error) {
 	if in.OrgID == "" || in.RefreshToken == "" {
 		return nil, apperr.BadRequest("orgId and refreshToken are required")
 	}

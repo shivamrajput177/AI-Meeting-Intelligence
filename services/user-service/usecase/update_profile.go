@@ -17,7 +17,7 @@ func NewUpdateProfileUseCase(repo domain.Repository) *UpdateProfileUseCase {
 	return &UpdateProfileUseCase{repo: repo}
 }
 
-func (uc *UpdateProfileUseCase) Execute(ctx context.Context, in entity.UpdateProfileInput) (*domain.User, error) {
+func (uc *UpdateProfileUseCase) UpdateProfile(ctx context.Context, in entity.UpdateProfileInput) (*domain.User, error) {
 	name := strings.TrimSpace(in.Name)
 	if name == "" {
 		return nil, apperr.BadRequest("name is required")

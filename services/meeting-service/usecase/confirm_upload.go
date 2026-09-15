@@ -16,10 +16,10 @@ func NewConfirmUploadUseCase(repo domain.Repository, storage domain.ObjectStorag
 	return &ConfirmUploadUseCase{repo: repo, storage: storage}
 }
 
-// Execute verifies the object actually landed in MinIO before treating
+// ConfirmUpload verifies the object actually landed in MinIO before treating
 // the upload as real — a client that calls this without ever PUTting the
 // file would otherwise leave a meeting row pointing at nothing.
-func (uc *ConfirmUploadUseCase) Execute(ctx context.Context, orgID, meetingID string) (*domain.Meeting, error) {
+func (uc *ConfirmUploadUseCase) ConfirmUpload(ctx context.Context, orgID, meetingID string) (*domain.Meeting, error) {
 	meeting, err := uc.repo.GetByID(ctx, orgID, meetingID)
 	if err != nil {
 		return nil, err

@@ -33,10 +33,10 @@ func NewRequestPasswordResetUseCase(userClient domain.UserClient, resetRepo doma
 	return &RequestPasswordResetUseCase{userClient: userClient, resetRepo: resetRepo, log: log, devExposeToken: devExposeToken}
 }
 
-// Execute always returns success (never reveals whether the email exists
+// RequestPasswordReset always returns success (never reveals whether the email exists
 // — a standard defense against account enumeration), and a dev-only token
 // string that's empty unless devExposeToken is set.
-func (uc *RequestPasswordResetUseCase) Execute(ctx context.Context, email string) (devToken string, err error) {
+func (uc *RequestPasswordResetUseCase) RequestPasswordReset(ctx context.Context, email string) (devToken string, err error) {
 	email = strings.TrimSpace(strings.ToLower(email))
 	if email == "" {
 		return "", apperr.BadRequest("email is required")
@@ -77,7 +77,7 @@ func NewConfirmPasswordResetUseCase(resetRepo domain.PasswordResetRepository, cr
 	return &ConfirmPasswordResetUseCase{resetRepo: resetRepo, credentials: credentials}
 }
 
-func (uc *ConfirmPasswordResetUseCase) Execute(ctx context.Context, token, newPassword string) error {
+func (uc *ConfirmPasswordResetUseCase) ConfirmPasswordReset(ctx context.Context, token, newPassword string) error {
 	if token == "" || len(newPassword) < 8 {
 		return apperr.BadRequest("token is required and password must be at least 8 characters")
 	}

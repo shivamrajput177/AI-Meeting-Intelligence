@@ -22,12 +22,12 @@ func NewSignupUseCase(orgClient domain.OrgClient, userClient domain.UserClient, 
 	return &SignupUseCase{orgClient: orgClient, userClient: userClient, credentials: credentials, tokenIssuer: tokenIssuer}
 }
 
-// Execute creates a brand-new organization and its owner user, then
+// Signup creates a brand-new organization and its owner user, then
 // issues tokens for them — the only signup path in Phase 1 (see
 // docs/ROADMAP.md Phase 1: "signup creates one org and its owner"). There
 // is deliberately no "join an existing org" path yet; that's the invite
 // flow, Phase 2.
-func (uc *SignupUseCase) Execute(ctx context.Context, in entity.SignupInput) (*entity.TokenPair, error) {
+func (uc *SignupUseCase) Signup(ctx context.Context, in entity.SignupInput) (*entity.TokenPair, error) {
 	orgName := strings.TrimSpace(in.OrgName)
 	email := strings.TrimSpace(strings.ToLower(in.Email))
 	name := strings.TrimSpace(in.Name)

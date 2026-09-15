@@ -43,7 +43,7 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) error {
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
 		return err
 	}
-	tokens, err := h.signup.Execute(r.Context(), entity.SignupInput(req))
+	tokens, err := h.signup.Signup(r.Context(), entity.SignupInput(req))
 	if err != nil {
 		return err
 	}
@@ -56,7 +56,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) error {
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
 		return err
 	}
-	tokens, err := h.login.Execute(r.Context(), entity.LoginInput(req))
+	tokens, err := h.login.Login(r.Context(), entity.LoginInput(req))
 	if err != nil {
 		return err
 	}
@@ -69,7 +69,7 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) error {
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
 		return err
 	}
-	tokens, err := h.refresh.Execute(r.Context(), entity.RefreshInput(req))
+	tokens, err := h.refresh.Refresh(r.Context(), entity.RefreshInput(req))
 	if err != nil {
 		return err
 	}
@@ -82,7 +82,7 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) error {
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
 		return err
 	}
-	if err := h.logout.Execute(r.Context(), entity.LogoutInput(req)); err != nil {
+	if err := h.logout.Logout(r.Context(), entity.LogoutInput(req)); err != nil {
 		return err
 	}
 	httpserver.NoContent(w)
@@ -94,7 +94,7 @@ func (h *Handler) RequestPasswordReset(w http.ResponseWriter, r *http.Request) e
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
 		return err
 	}
-	devToken, err := h.requestReset.Execute(r.Context(), req.Email)
+	devToken, err := h.requestReset.RequestPasswordReset(r.Context(), req.Email)
 	if err != nil {
 		return err
 	}
@@ -107,7 +107,7 @@ func (h *Handler) ConfirmPasswordReset(w http.ResponseWriter, r *http.Request) e
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
 		return err
 	}
-	if err := h.confirmReset.Execute(r.Context(), req.Token, req.NewPassword); err != nil {
+	if err := h.confirmReset.ConfirmPasswordReset(r.Context(), req.Token, req.NewPassword); err != nil {
 		return err
 	}
 	httpserver.NoContent(w)

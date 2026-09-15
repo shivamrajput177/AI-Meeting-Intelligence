@@ -23,7 +23,7 @@ type OrgResponse struct {
 	CreatedAt string `json:"createdAt"`
 }
 
-// CreateOrgInput is usecase.CreateOrgUseCase.Execute's input — the
+// CreateOrgInput is usecase.CreateOrgUseCase.CreateOrg's input — the
 // usecase layer's own Go-to-Go call contract, not a JSON wire struct
 // (no json tags), passed by handler/ straight from a decoded
 // CreateOrgRequest.

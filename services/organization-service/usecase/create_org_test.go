@@ -41,13 +41,13 @@ func (f *fakeRepository) GetByID(_ context.Context, id string) (*domain.Organiza
 	return org, nil
 }
 
-func TestCreateOrgUseCase_Execute(t *testing.T) {
+func TestCreateOrgUseCase_CreateOrg(t *testing.T) {
 	repo := newFakeRepository()
 	uc := usecase.NewCreateOrgUseCase(repo)
 
-	org, err := uc.Execute(context.Background(), entity.CreateOrgInput{Name: "Acme Inc"})
+	org, err := uc.CreateOrg(context.Background(), entity.CreateOrgInput{Name: "Acme Inc"})
 	if err != nil {
-		t.Fatalf("Execute: %v", err)
+		t.Fatalf("CreateOrg: %v", err)
 	}
 	if org.Name != "Acme Inc" {
 		t.Fatalf("Name = %q, want %q", org.Name, "Acme Inc")
@@ -59,27 +59,27 @@ func TestCreateOrgUseCase_Execute(t *testing.T) {
 		t.Fatal("expected a non-empty slug")
 	}
 
-	fetched, err := uc.Execute(context.Background(), entity.CreateOrgInput{Name: "Acme Inc"})
+	fetched, err := uc.CreateOrg(context.Background(), entity.CreateOrgInput{Name: "Acme Inc"})
 	if err != nil {
-		t.Fatalf("Execute (second org): %v", err)
+		t.Fatalf("CreateOrg (second org): %v", err)
 	}
 	if fetched.Slug == org.Slug {
 		t.Fatal("expected two orgs with the same name to still get distinct slugs")
 	}
 }
 
-func TestCreateOrgUseCase_Execute_RejectsEmptyName(t *testing.T) {
+func TestCreateOrgUseCase_CreateOrg_RejectsEmptyName(t *testing.T) {
 	uc := usecase.NewCreateOrgUseCase(newFakeRepository())
 
-	if _, err := uc.Execute(context.Background(), entity.CreateOrgInput{Name: "   "}); err == nil {
+	if _, err := uc.CreateOrg(context.Background(), entity.CreateOrgInput{Name: "   "}); err == nil {
 		t.Fatal("expected an error for a blank org name")
 	}
 }
 
-func TestGetOrgUseCase_Execute_NotFound(t *testing.T) {
+func TestGetOrgUseCase_GetOrg_NotFound(t *testing.T) {
 	uc := usecase.NewGetOrgUseCase(newFakeRepository())
 
-	if _, err := uc.Execute(context.Background(), "does-not-exist"); err == nil {
+	if _, err := uc.GetOrg(context.Background(), "does-not-exist"); err == nil {
 		t.Fatal("expected domain.ErrOrgNotFound for an unknown id")
 	}
 }

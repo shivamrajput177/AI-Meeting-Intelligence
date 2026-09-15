@@ -16,7 +16,7 @@ func NewUpdateStatusUseCase(repo domain.Repository) *UpdateStatusUseCase {
 	return &UpdateStatusUseCase{repo}
 }
 
-func (uc *UpdateStatusUseCase) Execute(ctx context.Context, orgID, id, status string) (*domain.Meeting, error) {
+func (uc *UpdateStatusUseCase) UpdateStatus(ctx context.Context, orgID, id, status string) (*domain.Meeting, error) {
 	if !domain.ValidStatuses[status] {
 		return nil, domain.ErrInvalidStatus
 	}
@@ -35,7 +35,7 @@ func NewDeleteMeetingUseCase(repo domain.Repository, storage domain.ObjectStorag
 	return &DeleteMeetingUseCase{repo: repo, storage: storage}
 }
 
-func (uc *DeleteMeetingUseCase) Execute(ctx context.Context, orgID, id string) error {
+func (uc *DeleteMeetingUseCase) DeleteMeeting(ctx context.Context, orgID, id string) error {
 	meeting, err := uc.repo.GetByID(ctx, orgID, id)
 	if err != nil {
 		return err

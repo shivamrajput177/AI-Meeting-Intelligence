@@ -15,10 +15,10 @@ func NewLookupByEmailUseCase(repo domain.Repository) *LookupByEmailUseCase {
 	return &LookupByEmailUseCase{repo: repo}
 }
 
-// Execute is used only by Auth Service's login flow to resolve which
+// LookupByEmail is used only by Auth Service's login flow to resolve which
 // org(s) an email belongs to before it knows the org_id. See
 // domain.EmailLookup's doc comment for what this deliberately does and
 // does not expose.
-func (uc *LookupByEmailUseCase) Execute(ctx context.Context, email string) ([]domain.EmailLookup, error) {
+func (uc *LookupByEmailUseCase) LookupByEmail(ctx context.Context, email string) ([]domain.EmailLookup, error) {
 	return uc.repo.LookupByEmail(ctx, strings.TrimSpace(strings.ToLower(email)))
 }

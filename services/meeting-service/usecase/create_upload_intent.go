@@ -22,10 +22,10 @@ func NewCreateUploadIntentUseCase(repo domain.Repository, storage domain.ObjectS
 	return &CreateUploadIntentUseCase{repo: repo, storage: storage}
 }
 
-// Execute creates the meeting row and hands back a presigned PUT URL —
+// CreateUploadIntent creates the meeting row and hands back a presigned PUT URL —
 // the recording's bytes go straight from the browser to MinIO, never
 // through this service, per docs/architecture/microservices.md §5.
-func (uc *CreateUploadIntentUseCase) Execute(ctx context.Context, in entity.CreateUploadIntentInput) (*entity.CreateUploadIntentOutput, error) {
+func (uc *CreateUploadIntentUseCase) CreateUploadIntent(ctx context.Context, in entity.CreateUploadIntentInput) (*entity.CreateUploadIntentOutput, error) {
 	title := strings.TrimSpace(in.Title)
 	if title == "" {
 		return nil, apperr.BadRequest("title is required")

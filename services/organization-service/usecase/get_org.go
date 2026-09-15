@@ -14,6 +14,6 @@ func NewGetOrgUseCase(repo domain.Repository) *GetOrgUseCase {
 	return &GetOrgUseCase{repo: repo}
 }
 
-func (uc *GetOrgUseCase) Execute(ctx context.Context, id string) (*domain.Organization, error) {
+func (uc *GetOrgUseCase) GetOrg(ctx context.Context, id string) (*domain.Organization, error) {
 	return uc.repo.GetByID(ctx, id)
 }

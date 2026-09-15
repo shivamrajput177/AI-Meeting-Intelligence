@@ -52,7 +52,7 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) error {
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
 		return err
 	}
-	user, err := h.createUser.Execute(r.Context(), entity.CreateUserInput(req))
+	user, err := h.createUser.CreateUser(r.Context(), entity.CreateUserInput(req))
 	if err != nil {
 		return err
 	}
@@ -65,7 +65,7 @@ func (h *Handler) LookupByEmail(w http.ResponseWriter, r *http.Request) error {
 	if email == "" {
 		return apperr.BadRequest("email query parameter is required")
 	}
-	matches, err := h.lookupByEmail.Execute(r.Context(), email)
+	matches, err := h.lookupByEmail.LookupByEmail(r.Context(), email)
 	if err != nil {
 		return err
 	}
@@ -81,7 +81,7 @@ func (h *Handler) LookupByEmail(w http.ResponseWriter, r *http.Request) error {
 
 func (h *Handler) GetMe(w http.ResponseWriter, r *http.Request) error {
 	orgID, userID := reqctx.OrgID(r.Context()), reqctx.UserID(r.Context())
-	user, err := h.getUser.Execute(r.Context(), orgID, userID)
+	user, err := h.getUser.GetUser(r.Context(), orgID, userID)
 	if err != nil {
 		return err
 	}
@@ -95,7 +95,7 @@ func (h *Handler) UpdateMe(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	orgID, userID := reqctx.OrgID(r.Context()), reqctx.UserID(r.Context())
-	user, err := h.updateProfile.Execute(r.Context(), entity.UpdateProfileInput{
+	user, err := h.updateProfile.UpdateProfile(r.Context(), entity.UpdateProfileInput{
 		OrgID: orgID, UserID: userID, Name: req.Name, AvatarURL: req.AvatarURL,
 	})
 	if err != nil {
@@ -113,7 +113,7 @@ func (h *Handler) GetUser(w http.ResponseWriter, r *http.Request) error {
 	if callerOrg := reqctx.OrgID(r.Context()); callerOrg != "" && callerOrg != orgID {
 		return apperr.Forbidden("cannot access another organization's users")
 	}
-	user, err := h.getUser.Execute(r.Context(), orgID, r.PathValue("userId"))
+	user, err := h.getUser.GetUser(r.Context(), orgID, r.PathValue("userId"))
 	if err != nil {
 		return err
 	}

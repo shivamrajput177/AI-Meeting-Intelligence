@@ -14,6 +14,6 @@ func NewGetUserUseCase(repo domain.Repository) *GetUserUseCase {
 	return &GetUserUseCase{repo: repo}
 }
 
-func (uc *GetUserUseCase) Execute(ctx context.Context, orgID, userID string) (*domain.User, error) {
+func (uc *GetUserUseCase) GetUser(ctx context.Context, orgID, userID string) (*domain.User, error) {
 	return uc.repo.GetByID(ctx, orgID, userID)
 }

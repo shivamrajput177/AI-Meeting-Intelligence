@@ -34,7 +34,7 @@ func (h *Handler) CreateOrg(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	org, err := h.createOrg.Execute(r.Context(), entity.CreateOrgInput(req))
+	org, err := h.createOrg.CreateOrg(r.Context(), entity.CreateOrgInput(req))
 	if err != nil {
 		return err
 	}
@@ -56,7 +56,7 @@ func (h *Handler) GetOrg(w http.ResponseWriter, r *http.Request) error {
 		return apperr.Forbidden("cannot access another organization")
 	}
 
-	org, err := h.getOrg.Execute(r.Context(), orgID)
+	org, err := h.getOrg.GetOrg(r.Context(), orgID)
 	if err != nil {
 		return err
 	}

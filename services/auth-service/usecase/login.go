@@ -21,11 +21,11 @@ func NewLoginUseCase(userClient domain.UserClient, credentials domain.Credential
 	return &LoginUseCase{userClient: userClient, credentials: credentials, tokenIssuer: tokenIssuer}
 }
 
-// Execute resolves which org an email belongs to via User Service (see
+// Login resolves which org an email belongs to via User Service (see
 // domain.UserClient.LookupByEmail and its "multi-org-per-email" trade-off
 // note), then verifies the password against Auth Service's own
 // credentials table.
-func (uc *LoginUseCase) Execute(ctx context.Context, in entity.LoginInput) (*entity.TokenPair, error) {
+func (uc *LoginUseCase) Login(ctx context.Context, in entity.LoginInput) (*entity.TokenPair, error) {
 	email := strings.TrimSpace(strings.ToLower(in.Email))
 	if email == "" || in.Password == "" {
 		return nil, apperr.BadRequest("email and password are required")

@@ -21,7 +21,7 @@ func NewCreateOrgUseCase(repo domain.Repository) *CreateOrgUseCase {
 	return &CreateOrgUseCase{repo: repo}
 }
 
-func (uc *CreateOrgUseCase) Execute(ctx context.Context, in entity.CreateOrgInput) (*domain.Organization, error) {
+func (uc *CreateOrgUseCase) CreateOrg(ctx context.Context, in entity.CreateOrgInput) (*domain.Organization, error) {
 	name := strings.TrimSpace(in.Name)
 	if name == "" {
 		return nil, apperr.BadRequest("name is required")

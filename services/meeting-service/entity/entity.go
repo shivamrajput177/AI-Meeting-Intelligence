@@ -44,11 +44,12 @@ type UpdateStatusRequest struct {
 	Status string `json:"status"`
 }
 
-// --- usecase/*.go: input/output for CreateUploadIntentUseCase.Execute.
-// Not JSON wire structs (no json tags) — CreateUploadIntentInput is the
-// usecase layer's own Go-to-Go call contract, passed by handler/
-// straight from a decoded CreateMeetingRequest; CreateUploadIntentOutput
-// is what handler/ reshapes into a CreateMeetingResponse. ---
+// --- usecase/*.go: input/output for
+// CreateUploadIntentUseCase.CreateUploadIntent. Not JSON wire structs (no
+// json tags) — CreateUploadIntentInput is the usecase layer's own
+// Go-to-Go call contract, passed by handler/ straight from a decoded
+// CreateMeetingRequest; CreateUploadIntentOutput is what handler/
+// reshapes into a CreateMeetingResponse. ---
 
 type CreateUploadIntentInput struct {
 	OrgID     string

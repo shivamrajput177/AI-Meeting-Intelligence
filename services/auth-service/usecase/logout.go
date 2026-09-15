@@ -17,10 +17,10 @@ func NewLogoutUseCase(refreshRepo domain.RefreshTokenRepository) *LogoutUseCase 
 	return &LogoutUseCase{refreshRepo: refreshRepo}
 }
 
-// Execute revokes the presented refresh token. It intentionally succeeds
+// Logout revokes the presented refresh token. It intentionally succeeds
 // even if the token is already gone/invalid — logout is idempotent from
 // the client's point of view ("am I logged out now?" — yes, either way).
-func (uc *LogoutUseCase) Execute(ctx context.Context, in entity.LogoutInput) error {
+func (uc *LogoutUseCase) Logout(ctx context.Context, in entity.LogoutInput) error {
 	if in.OrgID == "" || in.RefreshToken == "" {
 		return apperr.BadRequest("orgId and refreshToken are required")
 	}

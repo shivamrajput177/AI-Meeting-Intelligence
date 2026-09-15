@@ -20,12 +20,12 @@ func NewCreateUserUseCase(repo domain.Repository) *CreateUserUseCase {
 	return &CreateUserUseCase{repo: repo}
 }
 
-// Execute creates the user row for a brand-new signup (called by Auth
+// CreateUser creates the user row for a brand-new signup (called by Auth
 // Service over the /internal/users route — see
 // docs/architecture/microservices.md §3, "User row creation itself isn't
 // a called endpoint" is the Phase 2+ event-driven version of this; Phase 1
 // calls it synchronously since Kafka doesn't exist yet).
-func (uc *CreateUserUseCase) Execute(ctx context.Context, in entity.CreateUserInput) (*domain.User, error) {
+func (uc *CreateUserUseCase) CreateUser(ctx context.Context, in entity.CreateUserInput) (*domain.User, error) {
 	email := strings.TrimSpace(strings.ToLower(in.Email))
 	name := strings.TrimSpace(in.Name)
 	if email == "" || name == "" {

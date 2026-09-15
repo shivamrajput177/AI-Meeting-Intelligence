@@ -57,7 +57,7 @@ func (h *Handler) CreateUploadIntent(w http.ResponseWriter, r *http.Request) err
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
 		return err
 	}
-	out, err := h.createUploadIntent.Execute(r.Context(), entity.CreateUploadIntentInput{
+	out, err := h.createUploadIntent.CreateUploadIntent(r.Context(), entity.CreateUploadIntentInput{
 		OrgID: reqctx.OrgID(r.Context()), CreatedBy: reqctx.UserID(r.Context()), Title: req.Title,
 	})
 	if err != nil {
@@ -68,7 +68,7 @@ func (h *Handler) CreateUploadIntent(w http.ResponseWriter, r *http.Request) err
 }
 
 func (h *Handler) ConfirmUpload(w http.ResponseWriter, r *http.Request) error {
-	meeting, err := h.confirmUpload.Execute(r.Context(), reqctx.OrgID(r.Context()), r.PathValue("id"))
+	meeting, err := h.confirmUpload.ConfirmUpload(r.Context(), reqctx.OrgID(r.Context()), r.PathValue("id"))
 	if err != nil {
 		return err
 	}
@@ -77,7 +77,7 @@ func (h *Handler) ConfirmUpload(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (h *Handler) GetMeeting(w http.ResponseWriter, r *http.Request) error {
-	meeting, err := h.getMeeting.Execute(r.Context(), reqctx.OrgID(r.Context()), r.PathValue("id"))
+	meeting, err := h.getMeeting.GetMeeting(r.Context(), reqctx.OrgID(r.Context()), r.PathValue("id"))
 	if err != nil {
 		return err
 	}
@@ -86,7 +86,7 @@ func (h *Handler) GetMeeting(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (h *Handler) GetStatus(w http.ResponseWriter, r *http.Request) error {
-	meeting, err := h.getMeeting.Execute(r.Context(), reqctx.OrgID(r.Context()), r.PathValue("id"))
+	meeting, err := h.getMeeting.GetMeeting(r.Context(), reqctx.OrgID(r.Context()), r.PathValue("id"))
 	if err != nil {
 		return err
 	}
@@ -107,7 +107,7 @@ func (h *Handler) ListMeetings(w http.ResponseWriter, r *http.Request) error {
 		pageSize = 20
 	}
 
-	items, total, err := h.listMeetings.Execute(r.Context(), reqctx.OrgID(r.Context()), domain.ListFilter{Page: page, PageSize: pageSize})
+	items, total, err := h.listMeetings.ListMeetings(r.Context(), reqctx.OrgID(r.Context()), domain.ListFilter{Page: page, PageSize: pageSize})
 	if err != nil {
 		return err
 	}
@@ -131,7 +131,7 @@ func (h *Handler) UpdateStatus(w http.ResponseWriter, r *http.Request) error {
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
 		return err
 	}
-	meeting, err := h.updateStatus.Execute(r.Context(), reqctx.OrgID(r.Context()), r.PathValue("id"), req.Status)
+	meeting, err := h.updateStatus.UpdateStatus(r.Context(), reqctx.OrgID(r.Context()), r.PathValue("id"), req.Status)
 	if err != nil {
 		return err
 	}
@@ -140,7 +140,7 @@ func (h *Handler) UpdateStatus(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (h *Handler) DeleteMeeting(w http.ResponseWriter, r *http.Request) error {
-	if err := h.deleteMeeting.Execute(r.Context(), reqctx.OrgID(r.Context()), r.PathValue("id")); err != nil {
+	if err := h.deleteMeeting.DeleteMeeting(r.Context(), reqctx.OrgID(r.Context()), r.PathValue("id")); err != nil {
 		return err
 	}
 	httpserver.NoContent(w)
