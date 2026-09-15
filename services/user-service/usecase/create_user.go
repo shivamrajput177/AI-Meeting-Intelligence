@@ -8,15 +8,9 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/user-service/domain"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/user-service/entity"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/apperr"
 )
-
-type CreateUserInput struct {
-	OrgID string
-	Email string
-	Name  string
-	Role  string
-}
 
 type CreateUserUseCase struct {
 	repo domain.Repository
@@ -31,7 +25,7 @@ func NewCreateUserUseCase(repo domain.Repository) *CreateUserUseCase {
 // docs/architecture/microservices.md §3, "User row creation itself isn't
 // a called endpoint" is the Phase 2+ event-driven version of this; Phase 1
 // calls it synchronously since Kafka doesn't exist yet).
-func (uc *CreateUserUseCase) Execute(ctx context.Context, in CreateUserInput) (*domain.User, error) {
+func (uc *CreateUserUseCase) Execute(ctx context.Context, in entity.CreateUserInput) (*domain.User, error) {
 	email := strings.TrimSpace(strings.ToLower(in.Email))
 	name := strings.TrimSpace(in.Name)
 	if email == "" || name == "" {

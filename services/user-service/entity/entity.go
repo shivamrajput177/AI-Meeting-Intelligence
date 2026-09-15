@@ -1,9 +1,10 @@
-// Package entity holds User Service's plain request/response structs —
-// the JSON wire shapes at this service's REST boundary. Nothing here has
-// behavior (no methods, just fields and json tags): it's data, not a
-// class, which is what keeps it out of handler/ — that package holds the
-// code that does something with an entity, this package only describes
-// its shape. See handler/handler.go for where these are actually used.
+// Package entity holds User Service's plain data structs — the JSON wire
+// shapes at this service's REST boundary, and the plain input structs
+// its usecase layer passes around internally. Nothing here has behavior
+// (no methods, just fields, and json tags where the struct crosses the
+// wire): it's data, not a class, which is what keeps it out of handler/
+// and usecase/ — those packages hold the code that does something with
+// an entity, this package only describes its shape.
 package entity
 
 type UserResponse struct {
@@ -40,4 +41,22 @@ type LookupResponse struct {
 type UpdateMeRequest struct {
 	Name      string `json:"name"`
 	AvatarURL string `json:"avatarUrl"`
+}
+
+// --- usecase/*.go: input for each use case's Execute. Not JSON wire
+// structs (no json tags) — these are the usecase layer's own Go-to-Go
+// call contract, passed by handler/ straight from a decoded request. ---
+
+type CreateUserInput struct {
+	OrgID string
+	Email string
+	Name  string
+	Role  string
+}
+
+type UpdateProfileInput struct {
+	OrgID     string
+	UserID    string
+	Name      string
+	AvatarURL string
 }

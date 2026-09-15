@@ -52,9 +52,7 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) error {
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
 		return err
 	}
-	user, err := h.createUser.Execute(r.Context(), usecase.CreateUserInput{
-		OrgID: req.OrgID, Email: req.Email, Name: req.Name, Role: req.Role,
-	})
+	user, err := h.createUser.Execute(r.Context(), entity.CreateUserInput(req))
 	if err != nil {
 		return err
 	}
@@ -97,7 +95,7 @@ func (h *Handler) UpdateMe(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	orgID, userID := reqctx.OrgID(r.Context()), reqctx.UserID(r.Context())
-	user, err := h.updateProfile.Execute(r.Context(), usecase.UpdateProfileInput{
+	user, err := h.updateProfile.Execute(r.Context(), entity.UpdateProfileInput{
 		OrgID: orgID, UserID: userID, Name: req.Name, AvatarURL: req.AvatarURL,
 	})
 	if err != nil {

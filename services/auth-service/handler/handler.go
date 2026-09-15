@@ -34,7 +34,7 @@ func NewHandler(
 	}
 }
 
-func toTokenResponse(t *usecase.TokenPair) entity.TokenResponse {
+func toTokenResponse(t *entity.TokenPair) entity.TokenResponse {
 	return entity.TokenResponse{AccessToken: t.AccessToken, RefreshToken: t.RefreshToken, ExpiresIn: t.ExpiresIn}
 }
 
@@ -43,9 +43,7 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) error {
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
 		return err
 	}
-	tokens, err := h.signup.Execute(r.Context(), usecase.SignupInput{
-		OrgName: req.OrgName, Email: req.Email, Name: req.Name, Password: req.Password,
-	})
+	tokens, err := h.signup.Execute(r.Context(), entity.SignupInput(req))
 	if err != nil {
 		return err
 	}
@@ -58,7 +56,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) error {
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
 		return err
 	}
-	tokens, err := h.login.Execute(r.Context(), usecase.LoginInput{Email: req.Email, Password: req.Password})
+	tokens, err := h.login.Execute(r.Context(), entity.LoginInput(req))
 	if err != nil {
 		return err
 	}
@@ -71,9 +69,7 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) error {
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
 		return err
 	}
-	tokens, err := h.refresh.Execute(r.Context(), usecase.RefreshInput{
-		OrgID: req.OrgID, RefreshToken: req.RefreshToken, Role: req.Role,
-	})
+	tokens, err := h.refresh.Execute(r.Context(), entity.RefreshInput(req))
 	if err != nil {
 		return err
 	}
@@ -86,7 +82,7 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) error {
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
 		return err
 	}
-	if err := h.logout.Execute(r.Context(), usecase.LogoutInput{OrgID: req.OrgID, RefreshToken: req.RefreshToken}); err != nil {
+	if err := h.logout.Execute(r.Context(), entity.LogoutInput(req)); err != nil {
 		return err
 	}
 	httpserver.NoContent(w)

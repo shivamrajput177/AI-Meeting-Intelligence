@@ -7,17 +7,10 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/domain"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/entity"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/apperr"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/jwtutil"
 )
-
-// TokenPair is what every route that "logs someone in" (signup, login,
-// refresh) returns.
-type TokenPair struct {
-	AccessToken  string
-	RefreshToken string
-	ExpiresIn    int // seconds, for the client to know when to refresh
-}
 
 // TokenIssuer centralizes access+refresh token creation so signup, login,
 // and refresh all produce tokens the exact same way — see
@@ -35,18 +28,18 @@ func NewTokenIssuer(secret []byte, accessTTL, refreshTTL time.Duration, refreshR
 
 // Issue mints a fresh access+refresh pair with no prior refresh token to
 // revoke (signup, login).
-func (ti *TokenIssuer) Issue(ctx context.Context, userID, orgID, role string) (*TokenPair, error) {
+func (ti *TokenIssuer) Issue(ctx context.Context, userID, orgID, role string) (*entity.TokenPair, error) {
 	return ti.issue(ctx, userID, orgID, role, nil)
 }
 
 // Rotate mints a fresh pair AND revokes replacing the refresh token whose
 // id is oldRefreshID, linking replaced_by so replay of the old token is
 // detectable (see docs/architecture/observability-security.md §2).
-func (ti *TokenIssuer) Rotate(ctx context.Context, userID, orgID, role, oldRefreshID string) (*TokenPair, error) {
+func (ti *TokenIssuer) Rotate(ctx context.Context, userID, orgID, role, oldRefreshID string) (*entity.TokenPair, error) {
 	return ti.issue(ctx, userID, orgID, role, &oldRefreshID)
 }
 
-func (ti *TokenIssuer) issue(ctx context.Context, userID, orgID, role string, revoke *string) (*TokenPair, error) {
+func (ti *TokenIssuer) issue(ctx context.Context, userID, orgID, role string, revoke *string) (*entity.TokenPair, error) {
 	accessToken, _, err := jwtutil.GenerateAccessToken(ti.secret, userID, orgID, role, ti.accessTTL)
 	if err != nil {
 		return nil, apperr.Internal("issue access token").Wrap(err)
@@ -71,7 +64,7 @@ func (ti *TokenIssuer) issue(ctx context.Context, userID, orgID, role string, re
 		}
 	}
 
-	return &TokenPair{
+	return &entity.TokenPair{
 		AccessToken:  accessToken,
 		RefreshToken: rawRefresh,
 		ExpiresIn:    int(ti.accessTTL.Seconds()),

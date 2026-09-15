@@ -5,26 +5,10 @@ import (
 	"time"
 
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/domain"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/entity"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/apperr"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/jwtutil"
 )
-
-type RefreshInput struct {
-	// OrgID is required because refresh tokens are looked up scoped to an
-	// org (see RefreshTokenRepository) — the client must have kept it
-	// from its last login/signup response, alongside the refresh token
-	// itself.
-	OrgID        string
-	RefreshToken string
-	// Role is carried by the client from its last token pair. Phase 1
-	// doesn't re-derive it from User Service on every refresh (that would
-	// mean a synchronous call to another service on every refresh, for a
-	// value that essentially never changes between two refreshes) — a
-	// role change (Phase 2's PATCH .../role) takes effect on the user's
-	// *next* login/refresh cycle once they present a stale role, which is
-	// an acceptable staleness window, not silently ignored forever.
-	Role string
-}
 
 type RefreshUseCase struct {
 	refreshRepo domain.RefreshTokenRepository
@@ -35,7 +19,7 @@ func NewRefreshUseCase(refreshRepo domain.RefreshTokenRepository, tokenIssuer *T
 	return &RefreshUseCase{refreshRepo: refreshRepo, tokenIssuer: tokenIssuer}
 }
 
-func (uc *RefreshUseCase) Execute(ctx context.Context, in RefreshInput) (*TokenPair, error) {
+func (uc *RefreshUseCase) Execute(ctx context.Context, in entity.RefreshInput) (*entity.TokenPair, error) {
 	if in.OrgID == "" || in.RefreshToken == "" {
 		return nil, apperr.BadRequest("orgId and refreshToken are required")
 	}

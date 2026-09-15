@@ -6,14 +6,10 @@ import (
 	"time"
 
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/domain"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/entity"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/apperr"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/passwordutil"
 )
-
-type LoginInput struct {
-	Email    string
-	Password string
-}
 
 type LoginUseCase struct {
 	userClient  domain.UserClient
@@ -29,7 +25,7 @@ func NewLoginUseCase(userClient domain.UserClient, credentials domain.Credential
 // domain.UserClient.LookupByEmail and its "multi-org-per-email" trade-off
 // note), then verifies the password against Auth Service's own
 // credentials table.
-func (uc *LoginUseCase) Execute(ctx context.Context, in LoginInput) (*TokenPair, error) {
+func (uc *LoginUseCase) Execute(ctx context.Context, in entity.LoginInput) (*entity.TokenPair, error) {
 	email := strings.TrimSpace(strings.ToLower(in.Email))
 	if email == "" || in.Password == "" {
 		return nil, apperr.BadRequest("email and password are required")

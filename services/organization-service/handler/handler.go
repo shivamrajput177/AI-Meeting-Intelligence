@@ -34,7 +34,7 @@ func (h *Handler) CreateOrg(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	org, err := h.createOrg.Execute(r.Context(), usecase.CreateOrgInput{Name: req.Name})
+	org, err := h.createOrg.Execute(r.Context(), entity.CreateOrgInput(req))
 	if err != nil {
 		return err
 	}

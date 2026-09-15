@@ -1,13 +1,11 @@
-// Package entity holds Auth Service's plain request/response structs —
-// the JSON wire shapes at this service's boundaries. Nothing here has
-// behavior (no methods, just fields and json tags): it's data, not a
-// class, which is what keeps it out of handler/ and client/ — those
-// packages hold the code that does something with an entity, this
-// package only describes its shape. Split into the two boundaries that
-// produce/consume it: this service's own REST API (handler/handler.go)
-// and the outbound calls its client package makes to
-// organization-service/user-service (client/org_client.go,
-// client/user_client.go).
+// Package entity holds Auth Service's plain data structs — the JSON wire
+// shapes at this service's HTTP boundaries, and the plain
+// input/output structs its usecase layer passes around internally.
+// Nothing here has behavior (no methods, just fields, and json tags
+// where the struct crosses the wire): it's data, not a class, which is
+// what keeps it out of handler/, client/, and usecase/ — those packages
+// hold the code that does something with an entity, this package only
+// describes its shape.
 package entity
 
 // --- handler/handler.go: this service's own REST API ---
@@ -88,4 +86,52 @@ type LookupMatch struct {
 
 type LookupResponse struct {
 	Matches []LookupMatch `json:"matches"`
+}
+
+// --- usecase/*.go: input/output for each use case's Execute, and the
+// TokenPair every "logs someone in" use case (signup, login, refresh)
+// returns. Not JSON wire structs (no json tags) — these are the
+// usecase layer's own Go-to-Go call contract, passed by handler/
+// straight from a decoded request. ---
+
+type SignupInput struct {
+	OrgName  string
+	Email    string
+	Name     string
+	Password string
+}
+
+type LoginInput struct {
+	Email    string
+	Password string
+}
+
+type RefreshInput struct {
+	// OrgID is required because refresh tokens are looked up scoped to an
+	// org (see domain.RefreshTokenRepository) — the client must have kept
+	// it from its last login/signup response, alongside the refresh token
+	// itself.
+	OrgID        string
+	RefreshToken string
+	// Role is carried by the client from its last token pair. Phase 1
+	// doesn't re-derive it from User Service on every refresh (that would
+	// mean a synchronous call to another service on every refresh, for a
+	// value that essentially never changes between two refreshes) — a
+	// role change (Phase 2's PATCH .../role) takes effect on the user's
+	// *next* login/refresh cycle once they present a stale role, which is
+	// an acceptable staleness window, not silently ignored forever.
+	Role string
+}
+
+type LogoutInput struct {
+	OrgID        string
+	RefreshToken string
+}
+
+// TokenPair is what every route that "logs someone in" (signup, login,
+// refresh) returns.
+type TokenPair struct {
+	AccessToken  string
+	RefreshToken string
+	ExpiresIn    int // seconds, for the client to know when to refresh
 }

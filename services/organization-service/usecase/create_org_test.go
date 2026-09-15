@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/domain"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/entity"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/usecase"
 )
 
@@ -44,7 +45,7 @@ func TestCreateOrgUseCase_Execute(t *testing.T) {
 	repo := newFakeRepository()
 	uc := usecase.NewCreateOrgUseCase(repo)
 
-	org, err := uc.Execute(context.Background(), usecase.CreateOrgInput{Name: "Acme Inc"})
+	org, err := uc.Execute(context.Background(), entity.CreateOrgInput{Name: "Acme Inc"})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -58,7 +59,7 @@ func TestCreateOrgUseCase_Execute(t *testing.T) {
 		t.Fatal("expected a non-empty slug")
 	}
 
-	fetched, err := uc.Execute(context.Background(), usecase.CreateOrgInput{Name: "Acme Inc"})
+	fetched, err := uc.Execute(context.Background(), entity.CreateOrgInput{Name: "Acme Inc"})
 	if err != nil {
 		t.Fatalf("Execute (second org): %v", err)
 	}
@@ -70,7 +71,7 @@ func TestCreateOrgUseCase_Execute(t *testing.T) {
 func TestCreateOrgUseCase_Execute_RejectsEmptyName(t *testing.T) {
 	uc := usecase.NewCreateOrgUseCase(newFakeRepository())
 
-	if _, err := uc.Execute(context.Background(), usecase.CreateOrgInput{Name: "   "}); err == nil {
+	if _, err := uc.Execute(context.Background(), entity.CreateOrgInput{Name: "   "}); err == nil {
 		t.Fatal("expected an error for a blank org name")
 	}
 }

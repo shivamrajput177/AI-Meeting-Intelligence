@@ -9,19 +9,9 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/domain"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/entity"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/apperr"
 )
-
-type CreateUploadIntentInput struct {
-	OrgID     string
-	CreatedBy string
-	Title     string
-}
-
-type CreateUploadIntentOutput struct {
-	MeetingID string
-	UploadURL string
-}
 
 type CreateUploadIntentUseCase struct {
 	repo    domain.Repository
@@ -35,7 +25,7 @@ func NewCreateUploadIntentUseCase(repo domain.Repository, storage domain.ObjectS
 // Execute creates the meeting row and hands back a presigned PUT URL —
 // the recording's bytes go straight from the browser to MinIO, never
 // through this service, per docs/architecture/microservices.md §5.
-func (uc *CreateUploadIntentUseCase) Execute(ctx context.Context, in CreateUploadIntentInput) (*CreateUploadIntentOutput, error) {
+func (uc *CreateUploadIntentUseCase) Execute(ctx context.Context, in entity.CreateUploadIntentInput) (*entity.CreateUploadIntentOutput, error) {
 	title := strings.TrimSpace(in.Title)
 	if title == "" {
 		return nil, apperr.BadRequest("title is required")
@@ -62,5 +52,5 @@ func (uc *CreateUploadIntentUseCase) Execute(ctx context.Context, in CreateUploa
 		return nil, apperr.Internal("create meeting").Wrap(err)
 	}
 
-	return &CreateUploadIntentOutput{MeetingID: meetingID, UploadURL: uploadURL}, nil
+	return &entity.CreateUploadIntentOutput{MeetingID: meetingID, UploadURL: uploadURL}, nil
 }

@@ -1,9 +1,11 @@
-// Package entity holds Meeting Service's plain request/response structs
-// — the JSON wire shapes at this service's REST boundary. Nothing here
-// has behavior (no methods, just fields and json tags): it's data, not a
-// class, which is what keeps it out of handler/ — that package holds the
+// Package entity holds Meeting Service's plain data structs — the JSON
+// wire shapes at this service's REST boundary, and the plain
+// input/output structs its usecase layer passes around internally.
+// Nothing here has behavior (no methods, just fields, and json tags
+// where the struct crosses the wire): it's data, not a class, which is
+// what keeps it out of handler/ and usecase/ — those packages hold the
 // code that does something with an entity, this package only describes
-// its shape. See handler/handler.go for where these are actually used.
+// its shape.
 package entity
 
 type MeetingResponse struct {
@@ -40,4 +42,21 @@ type ListMeetingsResponse struct {
 // handler.Handler.UpdateStatus's doc comment.
 type UpdateStatusRequest struct {
 	Status string `json:"status"`
+}
+
+// --- usecase/*.go: input/output for CreateUploadIntentUseCase.Execute.
+// Not JSON wire structs (no json tags) — CreateUploadIntentInput is the
+// usecase layer's own Go-to-Go call contract, passed by handler/
+// straight from a decoded CreateMeetingRequest; CreateUploadIntentOutput
+// is what handler/ reshapes into a CreateMeetingResponse. ---
+
+type CreateUploadIntentInput struct {
+	OrgID     string
+	CreatedBy string
+	Title     string
+}
+
+type CreateUploadIntentOutput struct {
+	MeetingID string
+	UploadURL string
 }

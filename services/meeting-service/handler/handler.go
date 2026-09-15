@@ -57,7 +57,7 @@ func (h *Handler) CreateUploadIntent(w http.ResponseWriter, r *http.Request) err
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
 		return err
 	}
-	out, err := h.createUploadIntent.Execute(r.Context(), usecase.CreateUploadIntentInput{
+	out, err := h.createUploadIntent.Execute(r.Context(), entity.CreateUploadIntentInput{
 		OrgID: reqctx.OrgID(r.Context()), CreatedBy: reqctx.UserID(r.Context()), Title: req.Title,
 	})
 	if err != nil {

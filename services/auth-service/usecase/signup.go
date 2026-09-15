@@ -6,16 +6,10 @@ import (
 	"time"
 
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/domain"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/entity"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/apperr"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/passwordutil"
 )
-
-type SignupInput struct {
-	OrgName  string
-	Email    string
-	Name     string
-	Password string
-}
 
 type SignupUseCase struct {
 	orgClient   domain.OrgClient
@@ -33,7 +27,7 @@ func NewSignupUseCase(orgClient domain.OrgClient, userClient domain.UserClient, 
 // docs/ROADMAP.md Phase 1: "signup creates one org and its owner"). There
 // is deliberately no "join an existing org" path yet; that's the invite
 // flow, Phase 2.
-func (uc *SignupUseCase) Execute(ctx context.Context, in SignupInput) (*TokenPair, error) {
+func (uc *SignupUseCase) Execute(ctx context.Context, in entity.SignupInput) (*entity.TokenPair, error) {
 	orgName := strings.TrimSpace(in.OrgName)
 	email := strings.TrimSpace(strings.ToLower(in.Email))
 	name := strings.TrimSpace(in.Name)

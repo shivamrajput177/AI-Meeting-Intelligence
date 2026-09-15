@@ -9,12 +9,9 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/domain"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/organization-service/entity"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/apperr"
 )
-
-type CreateOrgInput struct {
-	Name string
-}
 
 type CreateOrgUseCase struct {
 	repo domain.Repository
@@ -24,7 +21,7 @@ func NewCreateOrgUseCase(repo domain.Repository) *CreateOrgUseCase {
 	return &CreateOrgUseCase{repo: repo}
 }
 
-func (uc *CreateOrgUseCase) Execute(ctx context.Context, in CreateOrgInput) (*domain.Organization, error) {
+func (uc *CreateOrgUseCase) Execute(ctx context.Context, in entity.CreateOrgInput) (*domain.Organization, error) {
 	name := strings.TrimSpace(in.Name)
 	if name == "" {
 		return nil, apperr.BadRequest("name is required")

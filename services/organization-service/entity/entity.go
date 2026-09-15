@@ -1,10 +1,10 @@
-// Package entity holds Organization Service's plain request/response
-// structs — the JSON wire shapes at this service's REST boundary.
-// Nothing here has behavior (no methods, just fields and json tags):
-// it's data, not a class, which is what keeps it out of handler/ — that
-// package holds the code that does something with an entity, this
-// package only describes its shape. See handler/handler.go for where
-// these are actually used.
+// Package entity holds Organization Service's plain data structs — the
+// JSON wire shapes at this service's REST boundary, and the plain input
+// struct its usecase layer passes around internally. Nothing here has
+// behavior (no methods, just fields, and json tags where the struct
+// crosses the wire): it's data, not a class, which is what keeps it out
+// of handler/ and usecase/ — those packages hold the code that does
+// something with an entity, this package only describes its shape.
 package entity
 
 // CreateOrgRequest is the body of both the internal POST /internal/orgs
@@ -21,4 +21,12 @@ type OrgResponse struct {
 	Plan      string `json:"plan"`
 	Status    string `json:"status"`
 	CreatedAt string `json:"createdAt"`
+}
+
+// CreateOrgInput is usecase.CreateOrgUseCase.Execute's input — the
+// usecase layer's own Go-to-Go call contract, not a JSON wire struct
+// (no json tags), passed by handler/ straight from a decoded
+// CreateOrgRequest.
+type CreateOrgInput struct {
+	Name string
 }
