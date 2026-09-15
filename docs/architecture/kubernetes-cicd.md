@@ -118,9 +118,9 @@ jobs:
         id: filter
         with:
           filters: |
-            api-gateway: 'cmd/api-gateway/**'
-            auth-service: 'cmd/auth-service/**'
-            # ... one entry per service, plus 'internal/platform/**' fans out to all
+            api-gateway: 'services/api-gateway/**'
+            auth-service: 'services/auth-service/**'
+            # ... one entry per service, plus 'shared/**' fans out to all
 
   lint-test-build:
     needs: detect-changes

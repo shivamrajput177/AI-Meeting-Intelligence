@@ -1,92 +1,105 @@
-# Folder Structure — Go Monorepo + Frontend
+# Folder Structure — Go Workspace + Frontend
 
-Single repo: a **single Go module** for the backend (one `go.mod` at the
-repo root, one `cmd/` entrypoint per microservice, shared code under
-`internal/platform` and `pkg/`), plus a `web/` directory for the frontend.
-Rationale for one repo: it keeps the REST API contracts, migrations, Helm
-charts, and the UI that consumes the API co-located and atomically
-reviewable in one PR, while `internal/<service>` boundaries keep the
-backend services independently deployable and (if ever needed)
-extractable into separate repos with minimal churn. There's no
-`.proto`/codegen step anywhere — every API, external and internal, is
-plain hand-written REST/JSON (see `microservices.md` §"Internal
-Communication").
+Single repo, but the backend is a **Go workspace** (`go.work` at the repo
+root): `shared/` is its own Go module, and every `services/<name>/` is a
+separate Go module with its own `go.mod`, one `cmd/` entrypoint, and its
+own `internal/` package tree. `go.work` lists all of them under `use` so
+`go build`/`go test` resolve across module boundaries locally, with no
+real `github.com/...` release needed for `shared` — see "Why a workspace,
+not one module" below for why this only works because `shared/` isn't
+nested under any `internal/` directory. Rationale for one repo despite
+the module split: it keeps the REST API contracts, migrations, Docker/K8s
+manifests, and the UI that consumes the API co-located and atomically
+reviewable in one PR, while each service's own module boundary keeps it
+independently buildable and (if ever needed) extractable into its own
+repo with minimal churn — just delete it from `go.work`'s `use` list and
+point its `shared` `replace` directive at a real tagged release instead
+of `../../shared`. There's no `.proto`/codegen step anywhere — every API,
+external and internal, is plain hand-written REST/JSON (see
+`microservices.md` §"Internal Communication").
 
-**Correction from the original design**: this was originally planned as a
-`go.work` workspace with one `go.mod` per service, so each `cmd/<service>`
-could in principle be extracted to its own repo without a rewrite. That
-doesn't actually work with Go's own rules: a package under `internal/` is
-only importable by code whose import path shares the prefix up to that
-`internal/` directory's parent — a separate module (a different root
-import path entirely) cannot import `internal/platform` no matter what
-`go.work` says, since `go.work` only lets modules that are *already*
-part of the same build resolve against each other's non-internal
-packages. One shared module is also simply the standard, idiomatic layout
-for a Go monorepo (the same shape Kubernetes, Docker, and most large Go
-codebases use) — not a compromise, the actual right call once you check
-what the language permits. Extracting a service into its own module and
-repo later means giving `internal/platform` (or the slice of it that
-service needs) its own module boundary at that point — a real but
-localized change, not a sign the current layout was wrong for now.
+## Why a workspace, not one module
+
+This wasn't the first design here. Go's own rule is: a package under
+`internal/` is only importable by code whose import path shares the
+prefix up to that `internal/` directory's parent. Concretely, if the
+shared library had stayed at `internal/platform/` (as it did in an
+earlier revision of this project), no other module could ever import it —
+not even with `go.work` — because `internal/` visibility is enforced by
+import path, not by which modules a workspace happens to bundle together.
+That's what forced the earlier fallback to a single shared module for
+the whole backend.
+
+The actual fix is simpler than either extreme: keep `shared/` out of any
+`internal/` directory entirely. A package's own name has no special
+meaning to the Go toolchain — only a literal path segment called
+`internal` does — so `shared/logger`, `shared/config`, etc. are ordinary
+importable packages, and any module `go.work` lists can import them
+across its own module boundary. Each service still keeps its
+service-specific code under its own `internal/` (domain, usecase,
+repository, handler) so *that* stays properly private to the service —
+nothing outside `services/auth-service/` can import
+`services/auth-service/internal/usecase`, which is exactly the
+encapsulation `internal/` is for. Only the genuinely cross-service
+library moved out from under it.
 
 ```
 .
-├── go.mod
-├── go.sum
-├── Makefile                          # make build/vet/test/lint, make up/down (docker compose)
-├── Dockerfile                        # shared multi-stage build for every backend service, parameterized by --build-arg SERVICE=<cmd dir>
-├── docker-compose.yaml               # local dev: postgres (pgvector image), redis, minio, all 5 backend services, web
-├── cmd/
-│   ├── api-gateway/main.go
-│   ├── auth-service/main.go
-│   ├── user-service/main.go
-│   ├── organization-service/main.go
-│   ├── meeting-service/main.go        # Phase 1 — one cmd per service exists as it's built
-│   ├── transcription-service/         #  } Phase 2+
-│   ├── ai-summary-service/            #  }
-│   ├── action-item-service/           #  }
-│   ├── search-service/                #  }
-│   ├── notification-service/          #  }
-│   └── analytics-service/             #  }
-│                                      # (no per-service Dockerfile — the root Dockerfile is
-│                                      #  parameterized by --build-arg SERVICE=<dir name>)
+├── go.work                            # lists shared/ + every services/<name>/ module
+├── Makefile                           # build/vet/test/lint loop over every module; up/down (docker compose)
+├── README.md
 │
-├── internal/
-│   ├── platform/                     # shared infra, imported by every service
-│   │   ├── config/                   # env var loading with defaults
-│   │   ├── logger/                   # hand-rolled key=value logger (no log/slog — see PROJECT_PLAN.md §5)
-│   │   ├── apperr/                   # typed app errors -> HTTP status + the {"error":{...}} envelope
-│   │   ├── jwtutil/                  # access-token sign/verify, opaque refresh-token generation/hashing
-│   │   ├── passwordutil/             # argon2id hash/verify
-│   │   ├── reqctx/                   # context accessors for org/user/role/request-id + the header names they travel under
-│   │   ├── dbx/                      # pgx pool, embedded-SQL migration runner, RLS tenant-context helper (+ the bypass-RLS escape hatch)
-│   │   ├── redisx/                   # client wrapper, revocation cache, fixed-window rate limiter
-│   │   ├── httpserver/               # net/http + ServeMux bootstrap (no web framework) + shared middleware (request id, recovery, access log, header->context), internal-token guard
-│   │   └── httpclient/               # shared client for calling another service's REST API: timeout, one retry, header propagation, error-envelope mapping
+├── services/
+│   ├── api-gateway/
+│   │   ├── go.mod
+│   │   ├── cmd/main.go
+│   │   └── internal/
+│   │       ├── handler/               # router.go (Register) — no domain/usecase/repository, just routing+middleware+proxy composition
+│   │       └── proxy/                 # net/http/httputil.ReverseProxy wrapper
 │   │
-│   ├── authsvc/            (domain/usecase/repository/delivery/client — client/ holds the OrgClient/UserClient adapters)
-│   ├── usersvc/            (domain/usecase/repository/delivery)
-│   ├── orgsvc/              (domain/usecase/repository/delivery)
-│   ├── meetingsvc/          (domain/usecase/repository/delivery, + storage/minio)
-│   ├── transcriptionsvc/    (Phase 2 — domain/usecase/repository/delivery, + whisper client)
-│   ├── aisummarysvc/        (Phase 2 — domain/usecase/repository/delivery, + ollama client, chunking)
-│   ├── actionitemsvc/       (Phase 2 — domain/usecase/repository/delivery, + ollama client)
-│   ├── searchsvc/           (Phase 3 — domain/usecase/repository/delivery, + ollama client, embeddings, rag)
-│   ├── notificationsvc/     (Phase 4 — domain/usecase/repository/delivery, + slack/email/jira clients, scheduler)
-│   ├── analyticssvc/        (Phase 3 — domain/usecase/repository/delivery, + rollup)
-│   └── routes/              (delivery/http only — the API Gateway's route handlers, reverse-proxying REST to each service via middleware/ and proxy/ subpackages; no domain/usecase of its own)
+│   ├── auth-service/
+│   │   ├── go.mod
+│   │   ├── cmd/main.go
+│   │   ├── migrations/{0001_init.up.sql, embed.go}
+│   │   └── internal/
+│   │       ├── domain/                # entities + repository interfaces + errors — no external deps
+│   │       ├── usecase/                # signup, login, refresh, logout, password reset, token issuer
+│   │       ├── repository/postgres/    # pgx-backed CredentialsRepository, RefreshTokenRepository, PasswordResetRepository
+│   │       ├── handler/                # this service's own REST API (handler.go + routes.go)
+│   │       └── client/                 # OrgClient/UserClient — outbound REST calls to org/user services, built on shared/httpclient
+│   │
+│   ├── user-service/       (go.mod, cmd/, migrations/, internal/{domain,usecase,repository/postgres,handler})
+│   ├── organization-service/ (same shape)
+│   ├── meeting-service/     (same shape, + internal/storage/minio — see its own doc comment for the internal/public endpoint split)
+│   │
+│   ├── transcription-service/  # Phase 2+ — same shape once built, + a whisper.cpp client
+│   ├── ai-summary-service/     #  } Phase 2+, + an Ollama client, chunking
+│   ├── action-item-service/    #  } Phase 2+, + an Ollama client
+│   ├── search-service/         #  } Phase 3+, + Ollama client, embeddings, RAG
+│   ├── notification-service/   #  } Phase 4+, + slack/email/jira clients, scheduler
+│   └── analytics-service/      #  } Phase 3+, + rollup jobs
 │
-├── migrations/
-│   ├── auth/{0001_init.up.sql, embed.go}      # embed.go: `//go:embed *.sql` — see its doc comment for why
-│   ├── user/{0001_init.up.sql, embed.go}
-│   ├── org/{0001_init.up.sql, embed.go}
-│   ├── meeting/{0001_init.up.sql, embed.go}
-│   ├── transcription/...                       # Phase 2+
-│   ├── ai/...
-│   ├── actionitem/...
-│   ├── search/...
-│   ├── notification/...
-│   └── analytics/...
+├── shared/                            # its own Go module — NOT under internal/, so every services/<name>/ module can import it (see above)
+│   ├── go.mod
+│   ├── logger/                        # hand-rolled key=value logger, sync.Once singleton (no log/slog — see PROJECT_PLAN.md §5)
+│   ├── config/                        # generic JSON config-file loader (config.Load[T]) — no env vars, see deployments/configs/
+│   ├── middleware/                    # every func(http.Handler) http.Handler in the system: the generic per-service chain (RequestID, RecoverPanic, AccessLog, ContextFromHeaders, RequireInternalToken) plus the two the gateway alone installs (Auth, RateLimit)
+│   ├── metrics/                       # Recorder interface + NoOp — placeholder seam for Phase 6's Prometheus wiring
+│   ├── httpserver/                    # net/http + ServeMux bootstrap (no web framework): wires shared/middleware's chain together, plus H/JSON/NoContent/DecodeJSON response helpers
+│   ├── apperr/                        # typed app errors -> HTTP status + the {"error":{...}} envelope
+│   ├── jwtutil/                       # access-token sign/verify, opaque refresh-token generation/hashing
+│   ├── passwordutil/                  # argon2id hash/verify
+│   ├── reqctx/                        # context accessors for org/user/role/request-id + the header names they travel under
+│   ├── dbx/                           # pgx pool, embedded-SQL migration runner, RLS tenant-context helper (+ the bypass-RLS escape hatch)
+│   ├── redisx/                        # client wrapper, revocation cache, token-bucket rate limiter (atomic Lua script)
+│   └── httpclient/                    # shared client for calling another service's REST API: timeout, one retry, header propagation, error-envelope mapping
+│
+├── deployments/
+│   ├── Dockerfile                     # shared multi-stage build for every backend service, parameterized by --build-arg SERVICE=<services/ dir name>; build context is the repo root (needs go.work + shared/ visible), not this directory
+│   ├── docker-compose.yaml            # local dev: postgres (pgvector image), redis, minio, all 5 backend services, web
+│   └── configs/
+│       ├── <service>.template.json    # checked in — the shape + dev-safe defaults; copy to <service>.json (gitignored) for `go run` on the host
+│       └── docker/<service>.json      # checked in — compose-network hostnames (postgres, redis, minio, other services by name), mounted into containers by docker-compose.yaml
 │
 ├── web/                               # frontend — the thing a recruiter/visitor actually opens
 │   ├── package.json
@@ -105,11 +118,6 @@ localized change, not a sign the current layout was wrong for now.
 │   │   ├── hooks/                     # useAuth.tsx — token storage, JWT payload decode for org/role, signup/login/logout
 │   │   └── styles/
 │   └── public/
-│
-├── deploy/
-│   ├── kind/kind-config.yaml
-│   ├── helm/                         # backend charts, see kubernetes-cicd.md §2, plus a `web` chart serving the built static frontend
-│   └── argocd/                       # ApplicationSet + AppProject manifests
 │
 ├── .github/workflows/
 │   ├── ci.yaml                       # backend
@@ -131,6 +139,14 @@ localized change, not a sign the current layout was wrong for now.
     └── e2e/                          # Playwright, drives web/ against a running stack end-to-end
 ```
 
+**A workspace has no single `./...`.** `go build ./...`/`go vet
+./...`/`go test ./...`/`golangci-lint run ./...` from the repo root only
+work rooted at one module's own directory — there's no single command
+that spans `shared/` and every `services/<name>/` module at once. `make
+build`/`vet`/`test`/`lint` loop over them for you; working inside one
+module (`cd services/auth-service`), the plain commands work exactly as
+in a normal single-module repo.
+
 **Frontend stack**: React + Vite + TypeScript, plain CSS or Tailwind, React
 Query for data fetching, no server-rendering needed — it's a thin client
 over the REST API in `api-spec.md`. Built to static files and served either
@@ -140,12 +156,15 @@ what a recruiter opens; the Go backend is what they read the code for.
 
 ## Per-service internal package convention (Clean Architecture)
 
-Every `internal/<service>/` follows the same shape — **domain → usecase →
-repository/delivery**, dependencies pointing inward, so switching between
-services during code review needs zero re-orientation:
+Every `services/<name>/internal/` follows the same shape — **domain →
+usecase → repository/handler**, dependencies pointing inward, so
+switching between services during code review needs zero re-orientation
+(the API Gateway is the one exception — it has no domain/usecase of its
+own, only `handler/` + `proxy/`, since its whole job is routing and
+reverse-proxying, not business logic):
 
 ```
-internal/<service>/
+services/<name>/internal/
 ├── domain/                # entities + interfaces (ports) — no external deps, nothing here imports anything else in this tree
 │   ├── entity.go          #   e.g. ActionItem, Meeting — plain structs
 │   ├── repository.go      #   interfaces: ActionItemRepository, defined by what usecase needs
@@ -160,12 +179,13 @@ internal/<service>/
 │   ├── postgres/           #   pgx-backed implementation, owns exactly this service's schema, sets tenant context
 │   └── redis/              #   cache-backed implementation, where used
 │
-└── delivery/                # transport adapters — translate the outside world into usecase calls
-    ├── http/                #   this service's own REST API (its handlers implement the routes documented for it in api-spec.md/microservices.md) — every service has one, since internal callers use the same REST transport as external clients
-    └── kafka/                #   consumer + producer adapters (publish/subscribe wrappers around usecase calls)
+└── handler/                 # transport adapters — translate the outside world into usecase calls
+    ├── handler.go            #   this service's own REST API (implements the routes documented for it in api-spec.md/microservices.md) — every service has one, since internal callers use the same REST transport as external clients
+    ├── routes.go             #   RegisterRoutes(mux, h, ...) — mounts this service's routes on its own *http.ServeMux
+    └── kafka/                #   Phase 2+: consumer + producer adapters (publish/subscribe wrappers around usecase calls)
 ```
 
-**Dependency rule**: `delivery` depends on `usecase`; `usecase` depends on
+**Dependency rule**: `handler` depends on `usecase`; `usecase` depends on
 `domain` (interfaces only, never a concrete `repository` package);
 `repository` also depends on `domain` (it implements domain's interfaces).
 Nothing in `domain` imports anything else in the tree. This is the

@@ -10,10 +10,12 @@ web/.vite/
 .env
 .env.local
 
-# Real service configs — copied from configs/*.template.json and filled
-# in with real values, so only the templates are checked in.
-configs/*.json
-!configs/*.template.json
+# Real service configs — copied from
+# deployments/configs/*.template.json and filled in with real values, so
+# only the templates are checked in. (deployments/configs/docker/*.json
+# is not covered by this and stays checked in — see its own README note.)
+deployments/configs/*.json
+!deployments/configs/*.template.json
 
 # Editor/OS
 .DS_Store

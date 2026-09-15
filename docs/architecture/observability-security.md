@@ -26,7 +26,7 @@
 
 ### Logging (Loki)
 - One `key=value` (logfmt-style) line per event, hand-built by
-  `internal/platform/logger` — no `log/slog`, no JSON encoder; see
+  `shared/logger` — no `log/slog`, no JSON encoder; see
   `PROJECT_PLAN.md` §5 for why. Fields: `time, level, service, msg, ...`
   plus whatever key/value pairs the call site adds (`status`, `duration`,
   `err`, `request_id`). Loki parses this natively via LogQL's `| logfmt`
@@ -42,7 +42,7 @@
 
 ### Tracing (OpenTelemetry + Tempo)
 - OTel Go SDK auto-instruments the stdlib `net/http` middleware chain in
-  `internal/platform/httpserver` (both the gateway's inbound requests and
+  `shared/httpserver` (both the gateway's inbound requests and
   every service's own inbound routes — internal calls are traced exactly
   like external ones, since they're the same transport),
   the Postgres driver (`otelpgx`), the Kafka producer/consumer (manual span

@@ -59,7 +59,7 @@ Every request-scoped DB transaction begins with:
 ```sql
 SET LOCAL app.current_org = '<org_id from JWT>';
 ```
-issued by a shared repository middleware in `internal/platform/db`, so
+issued by a shared repository middleware in `shared/dbx`, so
 forgetting it fails closed (no rows visible) rather than open. This is what
 makes RLS a second, independent line of defense: even if a handler bug lets
 a request through without an application-layer org check, the database

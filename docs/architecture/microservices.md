@@ -13,7 +13,7 @@ RPC protocol — when a service needs to call another synchronously (e.g.
 Action Item Service resolving an owner's display name via User Service), it
 calls that service's ClusterIP DNS name directly
 (`http://user-service.meeting-intel.svc.cluster.local/...`) using the same
-shared `internal/platform/httpclient` wrapper (timeouts, retries, circuit
+shared `shared/httpclient` wrapper (timeouts, retries, circuit
 breaker, trace-header propagation) that every outbound call uses — the same
 kind of client hitting Ollama or Jira. The API Gateway forwards the public
 subset of these same routes, adding auth/rate-limiting/logging on top; no

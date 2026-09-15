@@ -30,20 +30,22 @@ meeting upload via presigned MinIO URLs all work end-to-end. See
 `docs/ROADMAP.md`'s Phase 1 section for exact scope, and Phase 2 onward
 for what's next (Kafka, transcription, summarization, RBAC).
 
-One implementation note that updates `docs/architecture/folder-structure.md`:
-the backend is a **single Go module** (`go.mod` at the repo root), not
-separate `go.mod` files per service under a `go.work` workspace as
-originally planned — Go's `internal/` visibility rule only allows a
-package under `internal/` to be imported by code sharing its module root,
-so per-service modules couldn't actually share `internal/platform` the way
-the design called for. One module is also just the standard pattern for a
-Go monorepo of this shape.
+The backend is a **Go workspace** (`go.work` at the repo root): `shared/`
+is its own Go module with no `internal/` in its path, so every
+`services/<name>/` module — each with its own `go.mod` — can import it
+across module boundaries; `go.work` then lets `go build`/`go test` see
+all of them locally without a real `github.com/...` release for `shared`.
+See `docs/architecture/folder-structure.md` for the full layout and why
+an earlier single-module design (with `shared/` still under `internal/`)
+couldn't do this.
 
 ### Quickstart
 
 ```bash
-docker compose up --build
+make up
 ```
+
+(equivalent to `docker compose -f deployments/docker-compose.yaml up --build`)
 
 This starts Postgres (with `pgvector` pre-installed for Phase 3), Redis,
 MinIO, all five backend services, and the web app. Each service applies
@@ -65,35 +67,43 @@ hand. Then:
 
 Password reset returns its token directly in the API response in this dev
 setup (`auth_dev_expose_reset_token: true` in
-`configs/docker/auth-service.json`) rather than emailing it — there's no
-Notification Service to send real email until Phase 4.
+`deployments/configs/docker/auth-service.json`) rather than emailing it —
+there's no Notification Service to send real email until Phase 4.
 
 ### Configuration
 
 Every service reads its settings from a JSON file instead of environment
-variables — see `configs/<service>.template.json` for the full shape and
-dev-safe defaults. `docker compose up` uses the compose-network copies
-already checked in under `configs/docker/` (real hostnames like `postgres`
-and `minio`); running a binary directly on the host uses
-`configs/<service>.json`, which is gitignored, so run `make configs` once
-to seed it from the template, then edit in whatever you need to change.
-Point `database_url` at any Postgres 16+ instance and `redis_addr` at any
-Redis — migrations run automatically on startup either way. Pass a
-different file with `-config`, e.g. `go run ./cmd/auth-service -config
-/path/to/config.json`.
+variables — see `deployments/configs/<service>.template.json` for the
+full shape and dev-safe defaults. `make up` uses the compose-network
+copies already checked in under `deployments/configs/docker/` (real
+hostnames like `postgres` and `minio`); running a binary directly on the
+host uses `deployments/configs/<service>.json`, which is gitignored, so
+run `make configs` once to seed it from the template, then edit in
+whatever you need to change. Point `database_url` at any Postgres 16+
+instance and `redis_addr` at any Redis — migrations run automatically on
+startup either way. Pass a different file with `-config`, e.g. `go run
+./services/auth-service/cmd -config /path/to/config.json`.
 
 ### Local development without Docker
 
-Each service is a normal Go binary (`go run ./cmd/auth-service`, etc.)
-reading `configs/<service>.json` by default — see Configuration above.
+Each service is a normal Go binary (`go run ./services/auth-service/cmd`,
+etc., run from the repo root so `go.work` is picked up) reading
+`deployments/configs/<service>.json` by default — see Configuration
+above.
 
 ```bash
-make configs      # seed configs/*.json from the checked-in templates
-go build ./...    # compiles every service
-go vet ./...
-go test ./...     # unit tests — jwtutil, passwordutil, and a usecase test
-                   # against an in-memory fake repository (no DB needed)
-golangci-lint run ./...
+make configs   # seed deployments/configs/*.json from the checked-in templates
+make build     # compiles every module (shared + all 5 services)
+make vet
+make test      # unit tests — jwtutil, passwordutil, and a usecase test
+               # against an in-memory fake repository (no DB needed)
+make lint
 ```
+
+`go build`/`vet`/`test`/`golangci-lint` don't support a single `./...`
+across a whole workspace from the repo root — the Makefile targets above
+loop over `shared/` and each `services/<name>/` module for you. Working
+inside one module (e.g. `cd services/auth-service`), the plain commands
+work as usual.
 
 `web/` is a standalone Vite app: `cd web && npm install && npm run dev`.

@@ -18,7 +18,7 @@ below it.
 
 | Phase | Sub-phase | Service / Feature | What ships |
 |---|---|---|---|
-| **1 · MVP** | 1.1 | Platform scaffold | `go.work`, `internal/platform`, repo layout |
+| **1 · MVP** | 1.1 | Platform scaffold | `go.work`, `shared/`, `services/` repo layout |
 | | 1.2 | Auth Service | signup, login, JWT issue/refresh |
 | | 1.3 | Organization + User Service | create org, owner/member only (no RBAC yet) |
 | | 1.4 | Meeting Service | presigned upload, metadata, manual status |
@@ -64,7 +64,7 @@ below it.
 running on `docker compose`, no Kubernetes yet.
 
 **Tasks**
-- Scaffold the Go monorepo (`go.work`, `cmd/`, `internal/platform`) per
+- Scaffold the Go workspace (`go.work`, `services/`, `shared/`) per
   `folder-structure.md` (domain/usecase/repository/delivery per service).
 - Postgres schema + migrations for `org`, `user`, `auth`, `meeting`
   (RLS from day one, not bolted on later). The `role` column and its five
@@ -126,7 +126,7 @@ end of an uploaded recording, driven by Kafka events, running local models.
   `kafka-topics.md` relevant to this phase.
 - Transcription Service: whisper.cpp server integration, `meeting.uploaded.v1`
   consumer, transcript + segment persistence, `transcription.completed.v1`.
-- Ollama integration (`internal/platform` shared client): pull Llama3/Qwen/
+- Ollama integration (`shared/httpclient`-style shared client): pull Llama3/Qwen/
   Mistral, health-check readiness gating.
 - AI Summary Service: chunking pipeline, summarization prompt + parsing,
   `chunk.created.v1` / `summary.completed.v1`.
