@@ -29,15 +29,7 @@ type serviceConfig struct {
 }
 
 func main() {
-	configPath := flag.String("config", "deployments/configs/api-gateway.json", "path to config JSON file")
-	flag.Parse()
-
-	cfg, err := config.Load[serviceConfig](*configPath)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "load config:", err)
-		os.Exit(1)
-	}
-
+	cfg := loadConfig()
 	log := logger.New("api-gateway", logger.ParseLevel(cfg.LogLevel))
 
 	rdb := initRedis(cfg)
@@ -52,6 +44,21 @@ func main() {
 		log.Error("server stopped", "err", err)
 		os.Exit(1)
 	}
+}
+
+// loadConfig parses -config and reads the JSON file it points at,
+// exiting the process on failure — there's no sensible fallback for a
+// service that can't find out what port to listen on.
+func loadConfig() serviceConfig {
+	configPath := flag.String("config", "deployments/configs/api-gateway.json", "path to config JSON file")
+	flag.Parse()
+
+	cfg, err := config.Load[serviceConfig](*configPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "load config:", err)
+		os.Exit(1)
+	}
+	return cfg
 }
 
 func initRedis(cfg serviceConfig) *redis.Client {

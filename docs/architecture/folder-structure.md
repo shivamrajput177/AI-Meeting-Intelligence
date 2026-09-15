@@ -264,7 +264,7 @@ whole job is routing and reverse-proxying, not business logic):
 
 ```
 services/<name>/
-├── main.go                 # package main — wiring only: load config, construct repositories/usecases/Handler, call RegisterRoutes
+├── main.go                 # package main — wiring only: load config, construct repositories/usecases/Handler, call RegisterRoutes; each step is its own named function (loadConfig, initPostgres, ...) so main() itself reads as a short list of steps, not one long block
 ├── handler.go               #   package main too — what each route does: decodes an entity.*Request, calls usecase, encodes an entity.*Response
 ├── routes.go                #   package main too — RegisterRoutes(mux, h) maps each path+method to one Handler method; see "handler.go and routes.go are package main" above
 │

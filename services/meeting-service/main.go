@@ -10,6 +10,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	meetingmigrations "github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/migrations"
 
 	meetingpg "github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/repository/postgres"
@@ -37,49 +39,15 @@ type serviceConfig struct {
 }
 
 func main() {
-	configPath := flag.String("config", "deployments/configs/meeting-service.json", "path to config JSON file")
-	flag.Parse()
-
-	cfg, err := config.Load[serviceConfig](*configPath)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "load config:", err)
-		os.Exit(1)
-	}
-
+	cfg := loadConfig()
 	log := logger.New("meeting-service", logger.ParseLevel(cfg.LogLevel))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	pool, err := dbx.NewPool(ctx, cfg.DatabaseURL)
-	if err != nil {
-		log.Error("connect to postgres", "err", err)
-		os.Exit(1)
-	}
+	pool := initPostgres(ctx, cfg, log)
 	defer pool.Close()
 
-	if err := dbx.RunMigrations(ctx, pool, "meeting", meetingmigrations.FS, "."); err != nil {
-		log.Error("run migrations", "err", err)
-		os.Exit(1)
-	}
-
-	// See storage/minio's doc comment for why the internal/public
-	// endpoints are two different values.
-	storage, err := minio.New(
-		cfg.MinIOInternalEndpoint,
-		cfg.MinIOPublicEndpoint,
-		cfg.MinIOAccessKey,
-		cfg.MinIOSecretKey,
-		cfg.MinIOBucket,
-		cfg.MinIOUseSSL,
-	)
-	if err != nil {
-		log.Error("init minio client", "err", err)
-		os.Exit(1)
-	}
-	if err := storage.EnsureBucket(ctx); err != nil {
-		log.Error("ensure minio bucket", "err", err)
-		os.Exit(1)
-	}
+	storage := initStorage(ctx, cfg, log)
 
 	repo := meetingpg.NewMeetingRepository(pool)
 	handler := NewHandler(
@@ -100,4 +68,58 @@ func main() {
 		log.Error("server stopped", "err", err)
 		os.Exit(1)
 	}
+}
+
+// loadConfig parses -config and reads the JSON file it points at,
+// exiting the process on failure — there's no sensible fallback for a
+// service that can't find out what port to listen on.
+func loadConfig() serviceConfig {
+	configPath := flag.String("config", "deployments/configs/meeting-service.json", "path to config JSON file")
+	flag.Parse()
+
+	cfg, err := config.Load[serviceConfig](*configPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "load config:", err)
+		os.Exit(1)
+	}
+	return cfg
+}
+
+// initPostgres opens the connection pool and applies this service's own
+// migrations, exiting on failure — a service with no database or a
+// broken schema has nothing useful to do.
+func initPostgres(ctx context.Context, cfg serviceConfig, log *logger.Logger) *pgxpool.Pool {
+	pool, err := dbx.NewPool(ctx, cfg.DatabaseURL)
+	if err != nil {
+		log.Error("connect to postgres", "err", err)
+		os.Exit(1)
+	}
+	if err := dbx.RunMigrations(ctx, pool, "meeting", meetingmigrations.FS, "."); err != nil {
+		log.Error("run migrations", "err", err)
+		os.Exit(1)
+	}
+	return pool
+}
+
+// initStorage builds the MinIO client and makes sure its bucket exists,
+// exiting on failure. See storage/minio's doc comment for why the
+// internal/public endpoints are two different values.
+func initStorage(ctx context.Context, cfg serviceConfig, log *logger.Logger) *minio.Client {
+	storage, err := minio.New(
+		cfg.MinIOInternalEndpoint,
+		cfg.MinIOPublicEndpoint,
+		cfg.MinIOAccessKey,
+		cfg.MinIOSecretKey,
+		cfg.MinIOBucket,
+		cfg.MinIOUseSSL,
+	)
+	if err != nil {
+		log.Error("init minio client", "err", err)
+		os.Exit(1)
+	}
+	if err := storage.EnsureBucket(ctx); err != nil {
+		log.Error("ensure minio bucket", "err", err)
+		os.Exit(1)
+	}
+	return storage
 }

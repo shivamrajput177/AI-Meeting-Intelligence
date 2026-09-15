@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	authmigrations "github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/migrations"
 
 	authclient "github.com/shivamrajput177/ai-meeting-intelligence/services/auth-service/client/http"
@@ -38,42 +40,20 @@ type serviceConfig struct {
 }
 
 func main() {
-	configPath := flag.String("config", "deployments/configs/auth-service.json", "path to config JSON file")
-	flag.Parse()
-
-	cfg, err := config.Load[serviceConfig](*configPath)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "load config:", err)
-		os.Exit(1)
-	}
-
+	cfg := loadConfig()
 	log := logger.New("auth-service", logger.ParseLevel(cfg.LogLevel))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	pool, err := dbx.NewPool(ctx, cfg.DatabaseURL)
-	if err != nil {
-		log.Error("connect to postgres", "err", err)
-		os.Exit(1)
-	}
+	pool := initPostgres(ctx, cfg, log)
 	defer pool.Close()
 
-	if err := dbx.RunMigrations(ctx, pool, "auth", authmigrations.FS, "."); err != nil {
-		log.Error("run migrations", "err", err)
-		os.Exit(1)
-	}
-
-	orgClient := authclient.NewOrgClient(cfg.OrgServiceURL, cfg.InternalServiceToken)
-	userClient := authclient.NewUserClient(cfg.UserServiceURL, cfg.InternalServiceToken)
+	orgClient, userClient := initClients(cfg)
 
 	credentialsRepo := authpg.NewCredentialsRepository(pool)
 	refreshRepo := authpg.NewRefreshTokenRepository(pool)
 	resetRepo := authpg.NewPasswordResetRepository(pool)
-
-	jwtSecret := []byte(cfg.JWTSigningKey)
-	accessTTL := config.ParseDuration(cfg.AccessTokenTTL, 15*time.Minute)
-	refreshTTL := config.ParseDuration(cfg.RefreshTokenTTL, 7*24*time.Hour)
-	tokenIssuer := usecase.NewTokenIssuer(jwtSecret, accessTTL, refreshTTL, refreshRepo)
+	tokenIssuer := initTokenIssuer(cfg, refreshRepo)
 
 	handler := NewHandler(
 		usecase.NewSignupUseCase(orgClient, userClient, credentialsRepo, tokenIssuer),
@@ -93,4 +73,54 @@ func main() {
 		log.Error("server stopped", "err", err)
 		os.Exit(1)
 	}
+}
+
+// loadConfig parses -config and reads the JSON file it points at,
+// exiting the process on failure — there's no sensible fallback for a
+// service that can't find out what port to listen on.
+func loadConfig() serviceConfig {
+	configPath := flag.String("config", "deployments/configs/auth-service.json", "path to config JSON file")
+	flag.Parse()
+
+	cfg, err := config.Load[serviceConfig](*configPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "load config:", err)
+		os.Exit(1)
+	}
+	return cfg
+}
+
+// initPostgres opens the connection pool and applies this service's own
+// migrations, exiting on failure — a service with no database or a
+// broken schema has nothing useful to do.
+func initPostgres(ctx context.Context, cfg serviceConfig, log *logger.Logger) *pgxpool.Pool {
+	pool, err := dbx.NewPool(ctx, cfg.DatabaseURL)
+	if err != nil {
+		log.Error("connect to postgres", "err", err)
+		os.Exit(1)
+	}
+	if err := dbx.RunMigrations(ctx, pool, "auth", authmigrations.FS, "."); err != nil {
+		log.Error("run migrations", "err", err)
+		os.Exit(1)
+	}
+	return pool
+}
+
+// initClients builds the REST clients Auth Service calls through to
+// create the org+owner rows during signup — see client.OrgClient/
+// UserClient's doc comment for why signup orchestrates two other
+// services instead of writing to their tables directly.
+func initClients(cfg serviceConfig) (*authclient.OrgClient, *authclient.UserClient) {
+	orgClient := authclient.NewOrgClient(cfg.OrgServiceURL, cfg.InternalServiceToken)
+	userClient := authclient.NewUserClient(cfg.UserServiceURL, cfg.InternalServiceToken)
+	return orgClient, userClient
+}
+
+// initTokenIssuer wires the access/refresh TTLs from config into the one
+// TokenIssuer signup, login, and refresh all share.
+func initTokenIssuer(cfg serviceConfig, refreshRepo *authpg.RefreshTokenRepository) *usecase.TokenIssuer {
+	jwtSecret := []byte(cfg.JWTSigningKey)
+	accessTTL := config.ParseDuration(cfg.AccessTokenTTL, 15*time.Minute)
+	refreshTTL := config.ParseDuration(cfg.RefreshTokenTTL, 7*24*time.Hour)
+	return usecase.NewTokenIssuer(jwtSecret, accessTTL, refreshTTL, refreshRepo)
 }
