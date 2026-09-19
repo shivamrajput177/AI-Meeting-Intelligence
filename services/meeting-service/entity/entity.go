@@ -108,3 +108,16 @@ type CreateUploadIntentOutput struct {
 	MeetingID string
 	UploadURL string
 }
+
+// MeetingUploadedEvent is meeting.uploaded.v1's payload (see
+// docs/architecture/kafka-topics.md) — published once ConfirmUpload
+// verifies the recording actually landed in MinIO. Carries everything
+// Transcription Service needs to fetch and process the recording without
+// a synchronous callback to this service.
+type MeetingUploadedEvent struct {
+	MeetingID          string `json:"meetingId"`
+	OrgID              string `json:"orgId"`
+	Title              string `json:"title"`
+	SourceType         string `json:"sourceType"`
+	RecordingObjectKey string `json:"recordingObjectKey"`
+}

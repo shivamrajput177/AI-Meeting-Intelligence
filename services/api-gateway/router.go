@@ -16,10 +16,11 @@ import (
 )
 
 type ServiceURLs struct {
-	Auth    string
-	User    string
-	Org     string
-	Meeting string
+	Auth          string
+	User          string
+	Org           string
+	Meeting       string
+	Transcription string
 }
 
 // Register mounts every /api/v1/... route documented in
@@ -86,4 +87,6 @@ func Register(mux *http.ServeMux, urls ServiceURLs, jwtSecret []byte, rdb *redis
 	protect("/api/v1/meetings/{id}", urls.Meeting)
 	protect("/api/v1/meetings/{id}/complete-upload", urls.Meeting)
 	protect("/api/v1/meetings/{id}/status", urls.Meeting)
+
+	protect("/api/v1/meetings/{id}/transcript", urls.Transcription)
 }

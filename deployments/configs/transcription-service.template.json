@@ -1,12 +1,12 @@
 {
-  "port": "8083",
+  "port": "8084",
   "log_level": "info",
   "database_url": "postgres://postgres:postgres@localhost:5432/meetingintel",
   "minio_internal_endpoint": "localhost:9000",
-  "minio_public_endpoint": "localhost:9000",
   "minio_access_key": "minioadmin",
   "minio_secret_key": "minioadmin",
   "minio_bucket": "recordings",
   "minio_use_ssl": false,
+  "whisper_server_url": "http://localhost:8090",
   "kafka_brokers": ["localhost:29092"]
 }

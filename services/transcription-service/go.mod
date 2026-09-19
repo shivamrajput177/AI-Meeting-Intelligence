@@ -1,4 +1,4 @@
-module github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service
+module github.com/shivamrajput177/ai-meeting-intelligence/services/transcription-service
 
 go 1.25.0
 

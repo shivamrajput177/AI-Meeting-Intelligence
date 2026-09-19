@@ -18,14 +18,15 @@ import (
 // serviceConfig is api-gateway's whole configuration surface — see
 // configs/api-gateway.template.json for the shape and dev-safe defaults.
 type serviceConfig struct {
-	Port              string `json:"port"`
-	LogLevel          string `json:"log_level"`
-	JWTSigningKey     string `json:"jwt_signing_key"`
-	RedisAddr         string `json:"redis_addr"`
-	AuthServiceURL    string `json:"auth_service_url"`
-	UserServiceURL    string `json:"user_service_url"`
-	OrgServiceURL     string `json:"org_service_url"`
-	MeetingServiceURL string `json:"meeting_service_url"`
+	Port                    string `json:"port"`
+	LogLevel                string `json:"log_level"`
+	JWTSigningKey           string `json:"jwt_signing_key"`
+	RedisAddr               string `json:"redis_addr"`
+	AuthServiceURL          string `json:"auth_service_url"`
+	UserServiceURL          string `json:"user_service_url"`
+	OrgServiceURL           string `json:"org_service_url"`
+	MeetingServiceURL       string `json:"meeting_service_url"`
+	TranscriptionServiceURL string `json:"transcription_service_url"`
 }
 
 func main() {
@@ -67,9 +68,10 @@ func initRedis(cfg serviceConfig) *redis.Client {
 
 func initServiceURLs(cfg serviceConfig) ServiceURLs {
 	return ServiceURLs{
-		Auth:    cfg.AuthServiceURL,
-		User:    cfg.UserServiceURL,
-		Org:     cfg.OrgServiceURL,
-		Meeting: cfg.MeetingServiceURL,
+		Auth:          cfg.AuthServiceURL,
+		User:          cfg.UserServiceURL,
+		Org:           cfg.OrgServiceURL,
+		Meeting:       cfg.MeetingServiceURL,
+		Transcription: cfg.TranscriptionServiceURL,
 	}
 }

@@ -103,6 +103,26 @@ services:
     volumes:
       - "./kafka-init/create-topics.sh:/kafka-init/create-topics.sh:ro"
 
+  whisper:
+    # whisper.cpp's ASR engine, run as its own server — see
+    # docs/architecture/microservices.md §6. UNVERIFIED in a way the
+    # other services here aren't: this sandbox's egress proxy blocks all
+    # container-registry traffic, so this image/command pair has never
+    # actually been pulled or run — treat the exact image tag and
+    # command-line flags as "best effort from whisper.cpp's documented
+    # server usage," not confirmed working. whisper.cpp's own image also
+    # doesn't bundle a model file: download one with whisper.cpp's
+    # models/download-ggml-model.sh (e.g. `base.en`) into
+    # ./whisper-models/ before this container is actually useful — see
+    # README.md.
+    image: ghcr.io/ggml-org/whisper.cpp:main
+    entrypoint: ["/app/build/bin/whisper-server"]
+    command: ["--host", "0.0.0.0", "--port", "8080", "-m", "/models/ggml-base.en.bin"]
+    ports:
+      - "8090:8080"
+    volumes:
+      - "./whisper-models:/models:ro"
+
   organization-service:
     build: { context: .., dockerfile: deployments/Dockerfile, args: { SERVICE: organization-service } }
     volumes:
@@ -137,6 +157,20 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       minio: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      kafka-init: { condition: service_completed_successfully }
+
+  transcription-service:
+    build: { context: .., dockerfile: deployments/Dockerfile, args: { SERVICE: transcription-service } }
+    volumes:
+      - "./configs/docker/transcription-service.json:/app/deployments/configs/transcription-service.json:ro"
+    ports: ["8084:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      minio: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      kafka-init: { condition: service_completed_successfully }
+      whisper: { condition: service_started }
 
   api-gateway:
     build: { context: .., dockerfile: deployments/Dockerfile, args: { SERVICE: api-gateway } }
@@ -149,6 +183,7 @@ services:
       user-service: { condition: service_started }
       organization-service: { condition: service_started }
       meeting-service: { condition: service_started }
+      transcription-service: { condition: service_started }
 
   web:
     # VITE_API_BASE_URL must be a build arg, not a runtime environment

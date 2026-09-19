@@ -14,6 +14,7 @@ import (
 
 	meetingmigrations "github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/migrations"
 
+	eventskafka "github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/events/kafka"
 	meetingpg "github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/repository/postgres"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/storage/minio"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/usecase"
@@ -27,15 +28,16 @@ import (
 // configs/meeting-service.template.json for the shape and dev-safe
 // defaults.
 type serviceConfig struct {
-	Port                  string `json:"port"`
-	LogLevel              string `json:"log_level"`
-	DatabaseURL           string `json:"database_url"`
-	MinIOInternalEndpoint string `json:"minio_internal_endpoint"`
-	MinIOPublicEndpoint   string `json:"minio_public_endpoint"`
-	MinIOAccessKey        string `json:"minio_access_key"`
-	MinIOSecretKey        string `json:"minio_secret_key"`
-	MinIOBucket           string `json:"minio_bucket"`
-	MinIOUseSSL           bool   `json:"minio_use_ssl"`
+	Port                  string   `json:"port"`
+	LogLevel              string   `json:"log_level"`
+	DatabaseURL           string   `json:"database_url"`
+	MinIOInternalEndpoint string   `json:"minio_internal_endpoint"`
+	MinIOPublicEndpoint   string   `json:"minio_public_endpoint"`
+	MinIOAccessKey        string   `json:"minio_access_key"`
+	MinIOSecretKey        string   `json:"minio_secret_key"`
+	MinIOBucket           string   `json:"minio_bucket"`
+	MinIOUseSSL           bool     `json:"minio_use_ssl"`
+	KafkaBrokers          []string `json:"kafka_brokers"`
 }
 
 func main() {
@@ -49,10 +51,13 @@ func main() {
 
 	storage := initStorage(ctx, cfg, log)
 
+	publisher := eventskafka.NewPublisher(cfg.KafkaBrokers)
+	defer func() { _ = publisher.Close() }()
+
 	repo := meetingpg.NewMeetingRepository(pool)
 	handler := NewHandler(
 		usecase.NewCreateUploadIntentUseCase(repo, storage),
-		usecase.NewConfirmUploadUseCase(repo, storage),
+		usecase.NewConfirmUploadUseCase(repo, storage, publisher, log),
 		usecase.NewGetMeetingUseCase(repo),
 		usecase.NewListMeetingsUseCase(repo),
 		usecase.NewUpdateStatusUseCase(repo),

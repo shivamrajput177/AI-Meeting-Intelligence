@@ -21,7 +21,7 @@ hand-written REST/JSON; there's no gRPC or protobuf codegen anywhere in
 this design (see `docs/architecture/microservices.md` §"Internal
 Communication" for why).
 
-## Status: Phase 1 (MVP) implemented, Phase 2.1–2.2 implemented
+## Status: Phase 1 (MVP) implemented, Phase 2.1–2.3 implemented
 
 Auth, User, Organization, and Meeting services, the API Gateway, and a
 React web app are built and running — signup, login, JWT refresh/rotation,
@@ -37,11 +37,25 @@ re-check, per `docs/architecture/observability-security.md` §2).
 
 Phase 2.2's Kafka infra is in too: a single-node KRaft broker in
 `deployments/docker-compose.yaml` plus a one-shot topic-creation service
-(`deployments/kafka-init/`) covering every topic Phase 2's upcoming
-services will produce — see `docs/architecture/kafka-topics.md`'s "Local
-dev infra" section. No service produces or consumes yet; that starts at
-2.3 (Transcription Service). Phase 2 onward otherwise remains ahead:
-transcription, summarization, action-item extraction.
+(`deployments/kafka-init/`) covering every topic Phase 2's services
+produce — see `docs/architecture/kafka-topics.md`'s "Local dev infra"
+section.
+
+Phase 2.3's Transcription Service is built and wired end-to-end: Meeting
+Service publishes `meeting.uploaded.v1` on confirmed upload (best-effort —
+see `usecase.ConfirmUploadUseCase`'s doc comment for the known
+no-outbox-yet trade-off), Transcription Service consumes it, calls a real
+whisper.cpp server over HTTP, persists the transcript + segments, and
+publishes `transcription.completed.v1`/`transcription.failed.v1`; `GET
+/meetings/{id}/transcript` is live behind the gateway. **Not live-verified
+in this sandbox**: the egress proxy here blocks all container-registry
+traffic, so neither the Kafka broker nor a real whisper.cpp server has
+actually been run — the business logic is verified by unit test (fakes
+for storage/ASR/Kafka) and the REST+Postgres path is verified against a
+seeded row; the docker-compose config itself is unverified past `docker
+compose config` syntax validation. Phase 2 onward otherwise remains
+ahead: summarization, action-item extraction, RBAC's remaining Kafka
+audit-trail hookup.
 
 The backend is a **Go workspace** (`go.work` at the repo root): `shared/`
 is its own Go module with no `internal/` in its path, so every

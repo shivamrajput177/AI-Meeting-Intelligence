@@ -17,6 +17,10 @@ web/.vite/
 deployments/configs/*.json
 !deployments/configs/*.template.json
 
+# Downloaded whisper.cpp GGML model files — see
+# deployments/whisper-models/README.md.
+deployments/whisper-models/*.bin
+
 # Editor/OS
 .DS_Store
 .idea/

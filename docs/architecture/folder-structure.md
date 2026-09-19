@@ -169,9 +169,9 @@ alongside `main` and gave up being separately importable at all.
 │   │
 │   ├── user-service/       (go.mod, main.go, handler.go, routes.go, migrations/, entity/, usecase/, repository/{interface.go, postgres/})
 │   ├── organization-service/ (same shape)
-│   ├── meeting-service/     (same shape, + storage/{interface.go, minio/} for the ObjectStorage port — see storage/minio's own doc comment for the internal/public MinIO endpoint split)
+│   ├── meeting-service/     (same shape, + storage/{interface.go, minio/} for the ObjectStorage port — see storage/minio's own doc comment for the internal/public MinIO endpoint split, + events/{interface.go, kafka/} for the Publisher port that emits meeting.uploaded.v1)
+│   ├── transcription-service/ (same shape, + asr/{interface.go, whispercpp/} for the Transcriber port, + storage/{interface.go, minio/} read-only, + events/{interface.go, kafka/} for transcription.completed.v1/failed.v1, + consumer.go — package main, the Kafka analogue of routes.go: which topic maps to which usecase)
 │   │
-│   ├── transcription-service/  # Phase 2+ — same shape once built, + a whisper.cpp client
 │   ├── ai-summary-service/     #  } Phase 2+, + an Ollama client, chunking
 │   ├── action-item-service/    #  } Phase 2+, + an Ollama client
 │   ├── search-service/         #  } Phase 3+, + Ollama client, embeddings, RAG
@@ -281,16 +281,19 @@ services/<name>/
     └── postgres/           #   pgx-backed implementation, owns exactly this service's schema, sets tenant context
 ```
 
-A service that talks to another service directly instead of (or as well
-as) Postgres gets the same shape under a differently-named top-level
-package instead of forcing it into `repository/`: auth-service's
-`client/interface.go` (interfaces) + `client/http/` (implementation) for
-`OrgClient`/`UserClient`, meeting-service's `storage/interface.go` +
-`storage/minio/` for `ObjectStorage`. `interface.go` is the file name in
-every case, whatever the enclosing package is called — the principle is
-the same regardless: the interface lives with its one real
-implementation, and `usecase` depends on the interface type, never the
-concrete one.
+A service that talks to another service directly, to Kafka, or to some
+other external system instead of (or as well as) Postgres gets the same
+shape under a differently-named top-level package instead of forcing it
+into `repository/`: auth-service's `client/interface.go` (interfaces) +
+`client/http/` (implementation) for `OrgClient`/`UserClient`,
+meeting-service's and transcription-service's `storage/interface.go` +
+`storage/minio/` for `ObjectStorage`, transcription-service's
+`asr/interface.go` + `asr/whispercpp/` for `Transcriber`, and both
+services' `events/interface.go` + `events/kafka/` for `Publisher`.
+`interface.go` is the file name in every case, whatever the enclosing
+package is called — the principle is the same regardless: the interface
+lives with its one real implementation, and `usecase` depends on the
+interface type, never the concrete one.
 
 `entity`, `usecase`, and `repository` (and `client`/`storage`, where a
 service has them) stay separate packages — `usecase` depending on
