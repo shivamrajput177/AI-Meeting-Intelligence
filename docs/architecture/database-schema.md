@@ -61,9 +61,36 @@ SET LOCAL app.current_org = '<org_id from JWT>';
 ```
 issued by a shared repository middleware in `shared/dbx`, so
 forgetting it fails closed (no rows visible) rather than open. This is what
-makes RLS a second, independent line of defense: even if a handler bug lets
-a request through without an application-layer org check, the database
-itself will not return another tenant's rows.
+*would* make RLS a second, independent line of defense: even if a handler
+bug lets a request through without an application-layer org check, the
+database itself would not return another tenant's rows.
+
+**Except it currently doesn't, and this was a real bug, not a caveat
+written in advance.** Point 1 above says RLS doesn't apply "for every role
+except the table owner/superuser" — every service's `database_url` (see
+`deployments/configs/*.template.json`) connects as `postgres`, which
+*is* the table owner on every one of these tables. So every `SET LOCAL
+app.current_org` in this system has been a complete no-op since Phase 1:
+RLS has never actually filtered a single query. This was found live
+during Phase 2.3 (an org fetching another org's transcript through a
+query that had no explicit `WHERE org_id = ...`, relying on RLS alone),
+and the same pattern was then found and fixed in
+meeting-service's `GetByID`/`List`/`UpdateStatus`/`Touch`/`Delete` and
+user-service's `GetByID`/`List`/`UpdateRole`/`Deactivate` — all of them
+now filter by `org_id` explicitly in the SQL itself, which is the *real*
+enforcement today, not `SET LOCAL app.current_org`. auth-service was
+already written this way from the start (see that service's own
+`repository/postgres` package doc comment).
+The RLS policies and `SET LOCAL` calls are left in place (harmless, and
+the fix if the connection role is ever changed to a non-superuser one —
+see the open item below), but don't rely on them as-is.
+
+**Follow-up not yet done**: give each service's runtime connection its
+own non-superuser Postgres role (owning no tables — migrations would
+still run as a superuser/owner role to create schemas and RLS policies)
+so RLS actually enforces isolation as designed, as true defense-in-depth
+alongside the explicit `WHERE org_id = ...` filters rather than instead
+of them.
 
 ## Extensions
 

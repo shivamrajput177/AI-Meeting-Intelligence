@@ -48,12 +48,22 @@ func scanMeeting(row pgx.Row) (*entity.Meeting, error) {
 const selectMeetingCols = `id, org_id, title, created_by, status, source_type, recording_object_key,
 	duration_seconds, started_at, created_at, updated_at`
 
+// Every query below filters by org_id explicitly, not just through
+// WithTenantTx's SET LOCAL app.current_org — this service's runtime DB
+// connection is the Postgres superuser/table owner (see database_url in
+// deployments/configs/meeting-service.*), and RLS policies don't apply
+// to the table owner by design (see
+// docs/architecture/database-schema.md's "Row-Level Security pattern"
+// note). Without the explicit filter these are real cross-tenant IDOR
+// and full-table-scan leaks, not just theoretical: confirmed live during
+// Phase 2.3 by fetching another org's meeting through this exact code
+// path before this fix.
 func (r *MeetingRepository) GetByID(ctx context.Context, orgID, id string) (*entity.Meeting, error) {
 	var meeting *entity.Meeting
 	err := dbx.WithTenantTx(ctx, r.pool, orgID, func(ctx context.Context, tx pgx.Tx) error {
 		var scanErr error
 		meeting, scanErr = scanMeeting(tx.QueryRow(ctx,
-			`SELECT `+selectMeetingCols+` FROM meeting.meetings WHERE id = $1`, id))
+			`SELECT `+selectMeetingCols+` FROM meeting.meetings WHERE id = $1 AND org_id = $2`, id, orgID))
 		return scanErr
 	})
 	return meeting, err
@@ -63,14 +73,14 @@ func (r *MeetingRepository) List(ctx context.Context, orgID string, filter entit
 	var items []*entity.Meeting
 	var total int
 	err := dbx.WithTenantTx(ctx, r.pool, orgID, func(ctx context.Context, tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, `SELECT count(*) FROM meeting.meetings`).Scan(&total); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM meeting.meetings WHERE org_id = $1`, orgID).Scan(&total); err != nil {
 			return err
 		}
 
 		offset := (filter.Page - 1) * filter.PageSize
 		rows, err := tx.Query(ctx,
-			`SELECT `+selectMeetingCols+` FROM meeting.meetings ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
-			filter.PageSize, offset,
+			`SELECT `+selectMeetingCols+` FROM meeting.meetings WHERE org_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+			orgID, filter.PageSize, offset,
 		)
 		if err != nil {
 			return err
@@ -92,7 +102,7 @@ func (r *MeetingRepository) List(ctx context.Context, orgID string, filter entit
 func (r *MeetingRepository) UpdateStatus(ctx context.Context, orgID, id, status string) error {
 	return dbx.WithTenantTx(ctx, r.pool, orgID, func(ctx context.Context, tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx,
-			`UPDATE meeting.meetings SET status = $1, updated_at = now() WHERE id = $2`, status, id)
+			`UPDATE meeting.meetings SET status = $1, updated_at = now() WHERE id = $2 AND org_id = $3`, status, id, orgID)
 		if err != nil {
 			return err
 		}
@@ -108,7 +118,7 @@ func (r *MeetingRepository) UpdateStatus(ctx context.Context, orgID, id, status 
 
 func (r *MeetingRepository) Touch(ctx context.Context, orgID, id string) error {
 	return dbx.WithTenantTx(ctx, r.pool, orgID, func(ctx context.Context, tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, `UPDATE meeting.meetings SET updated_at = now() WHERE id = $1`, id)
+		tag, err := tx.Exec(ctx, `UPDATE meeting.meetings SET updated_at = now() WHERE id = $1 AND org_id = $2`, id, orgID)
 		if err != nil {
 			return err
 		}
@@ -121,7 +131,7 @@ func (r *MeetingRepository) Touch(ctx context.Context, orgID, id string) error {
 
 func (r *MeetingRepository) Delete(ctx context.Context, orgID, id string) error {
 	return dbx.WithTenantTx(ctx, r.pool, orgID, func(ctx context.Context, tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, `DELETE FROM meeting.meetings WHERE id = $1`, id)
+		tag, err := tx.Exec(ctx, `DELETE FROM meeting.meetings WHERE id = $1 AND org_id = $2`, id, orgID)
 		if err != nil {
 			return err
 		}

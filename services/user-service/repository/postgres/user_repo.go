@@ -37,13 +37,27 @@ func (r *UserRepository) Create(ctx context.Context, user *entity.User) error {
 	})
 }
 
+// Every query in this file filters by org_id explicitly, not just
+// through WithTenantTx's SET LOCAL app.current_org — this service's
+// runtime DB connection is the Postgres superuser/table owner (see
+// database_url in deployments/configs/user-service.*), and RLS policies
+// don't apply to the table owner by design (see
+// docs/architecture/database-schema.md's "Row-Level Security pattern"
+// note). Without the explicit filter, GetByID/UpdateRole/Deactivate are
+// real IDOR bugs: a caller acting on their own org (which passes
+// handler.go's requireSameOrg path check) can still target another org's
+// userID entirely, since that check only verifies the *path*'s orgId
+// matches the caller, never that the *targeted row* actually belongs to
+// it — confirmed live during Phase 2.3's audit by fetching/mutating
+// another org's user through this exact code path before this fix.
+
 func (r *UserRepository) GetByID(ctx context.Context, orgID, userID string) (*entity.User, error) {
 	var user entity.User
 	err := dbx.WithTenantTx(ctx, r.pool, orgID, func(ctx context.Context, tx pgx.Tx) error {
 		return tx.QueryRow(ctx,
 			`SELECT id, org_id, email, name, role, status, COALESCE(avatar_url, ''), created_at, updated_at
-			 FROM "user".users WHERE id = $1`,
-			userID,
+			 FROM "user".users WHERE id = $1 AND org_id = $2`,
+			userID, orgID,
 		).Scan(&user.ID, &user.OrgID, &user.Email, &user.Name, &user.Role, &user.Status,
 			&user.AvatarURL, &user.CreatedAt, &user.UpdatedAt)
 	})
@@ -61,9 +75,9 @@ func (r *UserRepository) UpdateProfile(ctx context.Context, orgID, userID, name,
 	err := dbx.WithTenantTx(ctx, r.pool, orgID, func(ctx context.Context, tx pgx.Tx) error {
 		return tx.QueryRow(ctx,
 			`UPDATE "user".users SET name = $1, avatar_url = $2, updated_at = now()
-			 WHERE id = $3
+			 WHERE id = $3 AND org_id = $4
 			 RETURNING id, org_id, email, name, role, status, COALESCE(avatar_url, ''), created_at, updated_at`,
-			name, avatarURL, userID,
+			name, avatarURL, userID, orgID,
 		).Scan(&user.ID, &user.OrgID, &user.Email, &user.Name, &user.Role, &user.Status,
 			&user.AvatarURL, &user.CreatedAt, &user.UpdatedAt)
 	})
@@ -91,14 +105,14 @@ func (r *UserRepository) List(ctx context.Context, orgID string, filter entity.L
 	var items []*entity.User
 	var total int
 	err := dbx.WithTenantTx(ctx, r.pool, orgID, func(ctx context.Context, tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, `SELECT count(*) FROM "user".users`).Scan(&total); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM "user".users WHERE org_id = $1`, orgID).Scan(&total); err != nil {
 			return err
 		}
 
 		offset := (filter.Page - 1) * filter.PageSize
 		rows, err := tx.Query(ctx,
-			`SELECT `+selectUserCols+` FROM "user".users ORDER BY created_at ASC LIMIT $1 OFFSET $2`,
-			filter.PageSize, offset,
+			`SELECT `+selectUserCols+` FROM "user".users WHERE org_id = $1 ORDER BY created_at ASC LIMIT $2 OFFSET $3`,
+			orgID, filter.PageSize, offset,
 		)
 		if err != nil {
 			return err
@@ -122,9 +136,9 @@ func (r *UserRepository) UpdateRole(ctx context.Context, orgID, userID, role str
 	err := dbx.WithTenantTx(ctx, r.pool, orgID, func(ctx context.Context, tx pgx.Tx) error {
 		row := tx.QueryRow(ctx,
 			`UPDATE "user".users SET role = $1, updated_at = now()
-			 WHERE id = $2
+			 WHERE id = $2 AND org_id = $3
 			 RETURNING `+selectUserCols,
-			role, userID,
+			role, userID, orgID,
 		)
 		u, err := scanUser(row)
 		user = u
@@ -144,9 +158,9 @@ func (r *UserRepository) Deactivate(ctx context.Context, orgID, userID string) (
 	err := dbx.WithTenantTx(ctx, r.pool, orgID, func(ctx context.Context, tx pgx.Tx) error {
 		row := tx.QueryRow(ctx,
 			`UPDATE "user".users SET status = $1, updated_at = now()
-			 WHERE id = $2
+			 WHERE id = $2 AND org_id = $3
 			 RETURNING `+selectUserCols,
-			entity.StatusDeactivated, userID,
+			entity.StatusDeactivated, userID, orgID,
 		)
 		u, err := scanUser(row)
 		user = u
@@ -196,7 +210,12 @@ func (r *UserRepository) GetInviteByTokenHash(ctx context.Context, tokenHash str
 
 func (r *UserRepository) MarkInviteAccepted(ctx context.Context, orgID, inviteID string) error {
 	return dbx.WithTenantTx(ctx, r.pool, orgID, func(ctx context.Context, tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `UPDATE "user".invites SET accepted_at = now() WHERE id = $1`, inviteID)
+		// orgID here is the invite's own org (resolved by
+		// GetInviteByTokenHash just before this is called), not
+		// attacker-supplied, so this isn't independently exploitable —
+		// filtered anyway for the same defense-in-depth reason as every
+		// other query in this file.
+		_, err := tx.Exec(ctx, `UPDATE "user".invites SET accepted_at = now() WHERE id = $1 AND org_id = $2`, inviteID, orgID)
 		return err
 	})
 }

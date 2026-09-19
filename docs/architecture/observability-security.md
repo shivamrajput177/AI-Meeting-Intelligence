@@ -103,10 +103,10 @@ probe hardest).
 
 | Layer | Isolation mechanism |
 |---|---|
-| Postgres | `org_id` column on every tenant table + **Row-Level Security** policy (`current_setting('app.current_org')`) — enforced even if application code has a bug |
-| Application | Every internal REST call carries `org_id` (extracted from the caller's JWT server-side, never trusted from a client-supplied body field, and forwarded as a header on service-to-service calls) — repository layer issues `SET LOCAL app.current_org` per transaction before any query |
+| Postgres | `org_id` column on every tenant table + **Row-Level Security** policy (`current_setting('app.current_org')`) — *intended* to enforce isolation even if application code has a bug, but currently doesn't: every service connects as the Postgres table owner/superuser, which RLS policies never apply to, so today the explicit `WHERE org_id = ...` filter every repository query now has (see `database-schema.md`'s RLS section for the incident this was found from) is the real enforcement, not RLS. Giving each service's runtime connection its own non-superuser role is the open follow-up that would make RLS live up to this row's original claim. |
+| Application | Every internal REST call carries `org_id` (extracted from the caller's JWT server-side, never trusted from a client-supplied body field, and forwarded as a header on service-to-service calls) — repository layer issues `SET LOCAL app.current_org` per transaction before any query, and (see the Postgres row above) also filters by `org_id` explicitly in the query itself |
 | MinIO | Object keys namespaced `org_id/meeting_id/...`; bucket policy denies cross-prefix listing; access only via short-lived presigned URLs scoped to one object |
-| pgvector search | Same RLS policy applies to `search.chunk_embeddings` — a similarity query physically cannot return another tenant's vectors |
+| pgvector search | Same caveat as the Postgres row above applies once `search.chunk_embeddings` exists (Phase 3) — plan for an explicit `org_id` filter in the query, not RLS alone |
 | Kafka | Messages carry `org_id` in the payload; consumers must apply tenant context before any DB write — no shared "global" topic mixes data at rest, only in transit |
 | Rate limits & quotas | Redis counters and `org.quotas` keyed by `org_id`; a noisy tenant is throttled independently |
 | Kubernetes (future silo tier) | Documented upgrade path: a "dedicated" plan gets its own namespace + NetworkPolicy + resource quota, without changing application code, since isolation is already tenant-aware at every layer |
