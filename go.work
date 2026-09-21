@@ -2,6 +2,7 @@ go 1.25.0
 
 use (
 	./shared
+	./services/ai-summary-service
 	./services/api-gateway
 	./services/auth-service
 	./services/meeting-service

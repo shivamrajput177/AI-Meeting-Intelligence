@@ -8,6 +8,7 @@ import (
 
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/transcription-service/entity"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/transcription-service/usecase"
+	"github.com/shivamrajput177/ai-meeting-intelligence/shared/apperr"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/httpserver"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/reqctx"
 )
@@ -36,15 +37,33 @@ func toTranscriptResponse(t *entity.Transcript, segments []*entity.Segment) enti
 }
 
 // GetTranscript serves the gateway-fronted GET /meetings/{id}/transcript.
-// AI Summary Service (Phase 2.4) is documented to read a transcript the
-// same way — "calls GET /meetings/{id}/transcript on Transcription
-// Service over REST" — but that's a direct service-to-service call with
-// no gateway-set org context, which this handler doesn't yet handle (it
-// only ever reads reqctx.OrgID, same as meeting-service's GetMeeting).
-// Left as a known, explicitly-called-out gap rather than solved
-// speculatively: there's no caller to get it right for until 2.4 exists.
 func (h *Handler) GetTranscript(w http.ResponseWriter, r *http.Request) error {
 	orgID := reqctx.OrgID(r.Context())
+	transcript, segments, err := h.getTranscript.GetTranscript(r.Context(), orgID, r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	httpserver.JSON(w, http.StatusOK, toTranscriptResponse(transcript, segments))
+	return nil
+}
+
+// GetTranscriptInternal is the same read, reachable at
+// /internal/meetings/{id}/transcript instead — this is what AI Summary
+// Service (Phase 2.4) actually calls: "calls GET /meetings/{id}/transcript
+// on Transcription Service over REST" per
+// docs/architecture/microservices.md §7, but that's a direct
+// service-to-service call with no gateway-set JWT/org context to read
+// reqctx.OrgID from. orgId travels as an explicit query parameter
+// instead, the same "internal caller states its own org_id" pattern
+// user-service's CreateUserRequest.OrgID already uses for auth-service's
+// signup call — trusted at face value once RequireInternalToken has
+// already verified the caller is a legitimate internal service (see that
+// middleware's own doc comment on this project's Phase 1 trust model).
+func (h *Handler) GetTranscriptInternal(w http.ResponseWriter, r *http.Request) error {
+	orgID := r.URL.Query().Get("orgId")
+	if orgID == "" {
+		return apperr.BadRequest("orgId query parameter is required")
+	}
 	transcript, segments, err := h.getTranscript.GetTranscript(r.Context(), orgID, r.PathValue("id"))
 	if err != nil {
 		return err

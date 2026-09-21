@@ -27,6 +27,7 @@ type serviceConfig struct {
 	OrgServiceURL           string `json:"org_service_url"`
 	MeetingServiceURL       string `json:"meeting_service_url"`
 	TranscriptionServiceURL string `json:"transcription_service_url"`
+	AISummaryServiceURL     string `json:"ai_summary_service_url"`
 }
 
 func main() {
@@ -73,5 +74,6 @@ func initServiceURLs(cfg serviceConfig) ServiceURLs {
 		Org:           cfg.OrgServiceURL,
 		Meeting:       cfg.MeetingServiceURL,
 		Transcription: cfg.TranscriptionServiceURL,
+		AISummary:     cfg.AISummaryServiceURL,
 	}
 }

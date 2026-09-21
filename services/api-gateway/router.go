@@ -21,6 +21,7 @@ type ServiceURLs struct {
 	Org           string
 	Meeting       string
 	Transcription string
+	AISummary     string
 }
 
 // Register mounts every /api/v1/... route documented in
@@ -89,4 +90,7 @@ func Register(mux *http.ServeMux, urls ServiceURLs, jwtSecret []byte, rdb *redis
 	protect("/api/v1/meetings/{id}/status", urls.Meeting)
 
 	protect("/api/v1/meetings/{id}/transcript", urls.Transcription)
+
+	protect("/api/v1/meetings/{id}/summary", urls.AISummary)
+	protect("/api/v1/meetings/{id}/summary/regenerate", urls.AISummary)
 }

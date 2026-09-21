@@ -21,7 +21,7 @@ hand-written REST/JSON; there's no gRPC or protobuf codegen anywhere in
 this design (see `docs/architecture/microservices.md` §"Internal
 Communication" for why).
 
-## Status: Phase 1 (MVP) implemented, Phase 2.1–2.3 implemented
+## Status: Phase 1 (MVP) implemented, Phase 2.1–2.4 implemented
 
 Auth, User, Organization, and Meeting services, the API Gateway, and a
 React web app are built and running — signup, login, JWT refresh/rotation,
@@ -47,15 +47,36 @@ see `usecase.ConfirmUploadUseCase`'s doc comment for the known
 no-outbox-yet trade-off), Transcription Service consumes it, calls a real
 whisper.cpp server over HTTP, persists the transcript + segments, and
 publishes `transcription.completed.v1`/`transcription.failed.v1`; `GET
-/meetings/{id}/transcript` is live behind the gateway. **Not live-verified
-in this sandbox**: the egress proxy here blocks all container-registry
-traffic, so neither the Kafka broker nor a real whisper.cpp server has
-actually been run — the business logic is verified by unit test (fakes
-for storage/ASR/Kafka) and the REST+Postgres path is verified against a
-seeded row; the docker-compose config itself is unverified past `docker
-compose config` syntax validation. Phase 2 onward otherwise remains
-ahead: summarization, action-item extraction, RBAC's remaining Kafka
-audit-trail hookup.
+/meetings/{id}/transcript` is live behind the gateway.
+
+Phase 2.4's AI Summary Service is in too: it consumes
+`transcription.completed.v1`, fetches the transcript from Transcription
+Service's new internal endpoint (`GET
+/internal/meetings/{id}/transcript`, guarded the same
+shared-secret-token way every other `/internal/*` route in this repo is),
+splits it into speaker-aware ~500-word chunks with overlap, summarizes it
+via a real Ollama server (structured JSON prompt → executive summary, key
+decisions, risks, blockers), persists both, and publishes
+`chunk.created.v1`/`summary.completed.v1`/`summary.failed.v1`. `GET
+/meetings/{id}/summary` and `POST /meetings/{id}/summary/regenerate` are
+live behind the gateway — regenerate just re-runs the same pipeline
+synchronously.
+
+**Not live-verified in this sandbox, for either 2.3 or 2.4**: the egress
+proxy here blocks all container-registry traffic, so the Kafka broker, a
+real whisper.cpp server, and a real Ollama server have never actually
+been run — the business logic (including the chunking algorithm) is
+verified by unit test with fakes, and each service's REST+Postgres read
+path is verified against a seeded row; the docker-compose config itself
+is unverified past `docker compose config` syntax validation. See
+`docs/architecture/database-schema.md`'s "Row-Level Security pattern"
+section for a related, now-fixed finding: every repository query in this
+project filters by `org_id` explicitly rather than relying on Postgres
+RLS, which turned out to be silently inert (every service connects as
+the table owner/superuser, which RLS never applies to). Phase 2 onward
+remains ahead: action-item extraction, and giving each service's DB
+connection its own non-superuser role so RLS becomes real defense-in-depth
+again.
 
 The backend is a **Go workspace** (`go.work` at the repo root): `shared/`
 is its own Go module with no `internal/` in its path, so every

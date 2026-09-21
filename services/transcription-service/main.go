@@ -40,6 +40,7 @@ type serviceConfig struct {
 	MinIOUseSSL           bool     `json:"minio_use_ssl"`
 	WhisperServerURL      string   `json:"whisper_server_url"`
 	KafkaBrokers          []string `json:"kafka_brokers"`
+	InternalServiceToken  string   `json:"internal_service_token"`
 }
 
 func main() {
@@ -70,7 +71,7 @@ func main() {
 	go ConsumeMeetingUploaded(ctx, reader, processUpload, publisher, log)
 
 	srv := httpserver.New("transcription-service", log)
-	RegisterRoutes(srv.Mux, handler)
+	RegisterRoutes(srv.Mux, handler, cfg.InternalServiceToken)
 
 	addr := ":" + cfg.Port
 	log.Info("starting", "addr", addr)

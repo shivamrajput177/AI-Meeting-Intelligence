@@ -8,5 +8,6 @@
   "minio_bucket": "recordings",
   "minio_use_ssl": false,
   "whisper_server_url": "http://whisper:8080",
-  "kafka_brokers": ["kafka:9092"]
+  "kafka_brokers": ["kafka:9092"],
+  "internal_service_token": "dev-internal-token"
 }

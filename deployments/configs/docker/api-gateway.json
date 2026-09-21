@@ -7,5 +7,6 @@
   "user_service_url": "http://user-service:8080",
   "org_service_url": "http://organization-service:8080",
   "meeting_service_url": "http://meeting-service:8080",
-  "transcription_service_url": "http://transcription-service:8080"
+  "transcription_service_url": "http://transcription-service:8080",
+  "ai_summary_service_url": "http://ai-summary-service:8080"
 }

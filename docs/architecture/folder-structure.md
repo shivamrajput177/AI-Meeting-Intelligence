@@ -170,9 +170,9 @@ alongside `main` and gave up being separately importable at all.
 │   ├── user-service/       (go.mod, main.go, handler.go, routes.go, migrations/, entity/, usecase/, repository/{interface.go, postgres/})
 │   ├── organization-service/ (same shape)
 │   ├── meeting-service/     (same shape, + storage/{interface.go, minio/} for the ObjectStorage port — see storage/minio's own doc comment for the internal/public MinIO endpoint split, + events/{interface.go, kafka/} for the Publisher port that emits meeting.uploaded.v1)
-│   ├── transcription-service/ (same shape, + asr/{interface.go, whispercpp/} for the Transcriber port, + storage/{interface.go, minio/} read-only, + events/{interface.go, kafka/} for transcription.completed.v1/failed.v1, + consumer.go — package main, the Kafka analogue of routes.go: which topic maps to which usecase)
+│   ├── transcription-service/ (same shape, + asr/{interface.go, whispercpp/} for the Transcriber port, + storage/{interface.go, minio/} read-only, + events/{interface.go, kafka/} for transcription.completed.v1/failed.v1, + consumer.go — package main, the Kafka analogue of routes.go: which topic maps to which usecase, + an /internal/meetings/{id}/transcript route so AI Summary Service can fetch a transcript without a gateway-set JWT context)
+│   ├── ai-summary-service/ (same shape, + llm/{interface.go, ollama/} for the Summarizer port, + transcript/{interface.go, http/} — a client to transcription-service's internal endpoint, exactly like auth-service's client/ calling org/user services — + events/{interface.go, kafka/} for chunk.created.v1/summary.completed.v1/failed.v1, + consumer.go, + usecase/chunking.go — a pure function, not a client/interface pair, since there's no external system or swappable implementation behind it)
 │   │
-│   ├── ai-summary-service/     #  } Phase 2+, + an Ollama client, chunking
 │   ├── action-item-service/    #  } Phase 2+, + an Ollama client
 │   ├── search-service/         #  } Phase 3+, + Ollama client, embeddings, RAG
 │   ├── notification-service/   #  } Phase 4+, + slack/email/jira clients, scheduler

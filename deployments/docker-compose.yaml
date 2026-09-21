@@ -123,6 +123,24 @@ services:
     volumes:
       - "./whisper-models:/models:ro"
 
+  ollama:
+    # Ollama serves the local LLM this service calls for summarization —
+    # see docs/architecture/microservices.md §7 and PROJECT_PLAN.md §3's
+    # tech stack row. Unlike whisper.cpp's image, `ollama/ollama` is
+    # Ollama's own official, widely-used image with a stable, simple
+    # contract (serve on :11434, models under /root/.ollama, pull with
+    # `ollama pull <model>`) — still unpulled and unrun in this sandbox
+    # (no container-registry access), but a much more standard target
+    # than whisper's than the `whisper` service's image/command guess.
+    # A model isn't bundled either: `docker compose exec ollama ollama
+    # pull qwen2.5:7b` (or whatever ollama_model configs/*.json name) is
+    # a one-time step before this container is actually useful.
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - "ollamadata:/root/.ollama"
+
   organization-service:
     build: { context: .., dockerfile: deployments/Dockerfile, args: { SERVICE: organization-service } }
     volumes:
@@ -172,6 +190,18 @@ services:
       kafka-init: { condition: service_completed_successfully }
       whisper: { condition: service_started }
 
+  ai-summary-service:
+    build: { context: .., dockerfile: deployments/Dockerfile, args: { SERVICE: ai-summary-service } }
+    volumes:
+      - "./configs/docker/ai-summary-service.json:/app/deployments/configs/ai-summary-service.json:ro"
+    ports: ["8085:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      kafka-init: { condition: service_completed_successfully }
+      ollama: { condition: service_started }
+      transcription-service: { condition: service_started }
+
   api-gateway:
     build: { context: .., dockerfile: deployments/Dockerfile, args: { SERVICE: api-gateway } }
     volumes:
@@ -184,6 +214,7 @@ services:
       organization-service: { condition: service_started }
       meeting-service: { condition: service_started }
       transcription-service: { condition: service_started }
+      ai-summary-service: { condition: service_started }
 
   web:
     # VITE_API_BASE_URL must be a build arg, not a runtime environment
@@ -202,3 +233,4 @@ volumes:
   pgdata:
   miniodata:
   kafkadata:
+  ollamadata:
