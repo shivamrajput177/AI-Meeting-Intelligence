@@ -110,13 +110,310 @@ hand. Then:
     -d '{"orgName":"Acme Inc","email":"alice@acme.com","name":"Alice","password":"correcthorsebatterystaple"}'
   ```
   Use the returned `accessToken` as `Authorization: Bearer <token>` on
-  everything else (`GET /users/me`, `POST /meetings`, …).
+  everything else (`GET /users/me`, `POST /meetings`, …) — see "API
+  Reference — curl / Postman" below for every endpoint.
 - **MinIO console**: http://localhost:9001 (`minioadmin` / `minioadmin`).
 
 Password reset returns its token directly in the API response in this dev
 setup (`auth_dev_expose_reset_token: true` in
 `deployments/configs/docker/auth-service.json`) rather than emailing it —
 there's no Notification Service to send real email until Phase 4.
+
+### API Reference — curl / Postman
+
+Every request below goes through the API Gateway at
+`http://localhost:8000/api/v1` (per `docs/architecture/api-spec.md`), the
+same way a real client would — nothing here talks to a service directly
+except the "Internal service-to-service APIs" section at the very end,
+which is for debugging the plumbing, not for a client to call.
+
+**To use in Postman**: create an environment with the variables below,
+then paste each `curl` command into Postman's *Import → Raw text* (or
+just type the request by hand) — the `{{variable}}` placeholders resolve
+against your environment automatically. To run a command with plain
+`curl` instead, replace every `{{...}}` with a real value first.
+
+| Variable | Starting value | Set from |
+|---|---|---|
+| `base_url` | `http://localhost:8000/api/v1` | fixed |
+| `access_token` | *(empty)* | `accessToken` in a signup/login/refresh/accept-invite response |
+| `refresh_token` | *(empty)* | `refreshToken` in the same responses |
+| `org_id` | *(empty)* | decode the JWT in `access_token` (it's the `org_id` claim), or the `orgId` in `GET /users/me`'s response |
+| `user_id` | *(empty)* | `id` in `GET /users/me`'s response |
+| `role` | *(empty)* | `role` in `GET /users/me`'s response — `POST /auth/refresh` needs this |
+| `meeting_id` | *(empty)* | `meetingId` in `POST /meetings`'s response |
+| `invite_token` | *(empty)* | logged by user-service as `dev_invite_token` (see `POST /orgs/{orgId}/invites` below) |
+| `reset_token` | *(empty)* | logged by auth-service as `dev_reset_token`, or `devToken` in the response if `auth_dev_expose_reset_token: true` |
+
+Every response follows `{"error": {"code", "message", "requestId"}}` on
+failure — see `docs/architecture/api-spec.md` for the full contract.
+
+#### Auth (public — no token needed)
+
+**Signup** — creates a new org and its owner user, returns tokens:
+```bash
+curl -X POST {{base_url}}/auth/signup \
+  -H "Content-Type: application/json" \
+  -d '{
+    "orgName": "Acme Inc",
+    "email": "alice@acme.com",
+    "name": "Alice",
+    "password": "correcthorsebatterystaple"
+  }'
+```
+
+**Login**:
+```bash
+curl -X POST {{base_url}}/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "alice@acme.com",
+    "password": "correcthorsebatterystaple"
+  }'
+```
+
+**Refresh** — rotates the refresh token (single-use; the old one is
+revoked the moment a new one is issued, so refreshing twice with the same
+token fails on purpose):
+```bash
+curl -X POST {{base_url}}/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{
+    "orgId": "{{org_id}}",
+    "refreshToken": "{{refresh_token}}",
+    "role": "{{role}}"
+  }'
+```
+
+**Logout** — revokes a refresh token (needs a bearer token, unlike the
+rest of this section):
+```bash
+curl -X POST {{base_url}}/auth/logout \
+  -H "Authorization: Bearer {{access_token}}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "orgId": "{{org_id}}",
+    "refreshToken": "{{refresh_token}}"
+  }'
+```
+
+**Request password reset** — always returns `200` whether or not the
+email exists (no account enumeration); the token is logged server-side
+and only echoed in the response when
+`auth_dev_expose_reset_token: true`:
+```bash
+curl -X POST {{base_url}}/auth/password/reset-request \
+  -H "Content-Type: application/json" \
+  -d '{"email": "alice@acme.com"}'
+```
+
+**Confirm password reset**:
+```bash
+curl -X POST {{base_url}}/auth/password/reset-confirm \
+  -H "Content-Type: application/json" \
+  -d '{
+    "token": "{{reset_token}}",
+    "newPassword": "aDifferentSecurePassword1"
+  }'
+```
+
+**Accept an org invite** — the invite-flow counterpart to signup; joins
+the org and role an owner/admin already chose, returns tokens like
+signup/login do:
+```bash
+curl -X POST {{base_url}}/invites/{{invite_token}}/accept \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Bob",
+    "password": "correcthorsebatterystaple"
+  }'
+```
+
+#### Users (bearer token required)
+
+**Get my profile**:
+```bash
+curl {{base_url}}/users/me \
+  -H "Authorization: Bearer {{access_token}}"
+```
+
+**Update my profile**:
+```bash
+curl -X PATCH {{base_url}}/users/me \
+  -H "Authorization: Bearer {{access_token}}" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Alice Smith", "avatarUrl": "https://example.com/avatar.png"}'
+```
+
+**List my org's users** (any member; supports `?page=&pageSize=`):
+```bash
+curl "{{base_url}}/orgs/{{org_id}}/users?page=1&pageSize=20" \
+  -H "Authorization: Bearer {{access_token}}"
+```
+
+**Get one user**:
+```bash
+curl {{base_url}}/orgs/{{org_id}}/users/{{user_id}} \
+  -H "Authorization: Bearer {{access_token}}"
+```
+
+**Invite a user** — owner/admin only; role must be `admin`, `manager`,
+`member`, or `viewer` (never `owner`). The raw invite token is logged as
+`dev_invite_token` and only appears in the response body when
+`user_dev_expose_invite_token: true`:
+```bash
+curl -X POST {{base_url}}/orgs/{{org_id}}/invites \
+  -H "Authorization: Bearer {{access_token}}" \
+  -H "Content-Type: application/json" \
+  -d '{"email": "bob@acme.com", "role": "member"}'
+```
+
+**Change a user's role** — owner/admin only; can't target the org owner
+or your own account:
+```bash
+curl -X PATCH {{base_url}}/orgs/{{org_id}}/users/{{user_id}}/role \
+  -H "Authorization: Bearer {{access_token}}" \
+  -H "Content-Type: application/json" \
+  -d '{"role": "manager"}'
+```
+
+**Deactivate a user** — owner/admin only; same self/owner restrictions
+as above:
+```bash
+curl -X DELETE {{base_url}}/orgs/{{org_id}}/users/{{user_id}} \
+  -H "Authorization: Bearer {{access_token}}"
+```
+
+#### Organizations (bearer token required)
+
+**Get my org**:
+```bash
+curl {{base_url}}/orgs/{{org_id}} \
+  -H "Authorization: Bearer {{access_token}}"
+```
+
+#### Meetings (bearer token required)
+
+**Create a meeting / get a presigned upload URL**:
+```bash
+curl -X POST {{base_url}}/meetings \
+  -H "Authorization: Bearer {{access_token}}" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Sprint Planning"}'
+```
+Then `PUT` the actual recording bytes straight to the `uploadUrl` the
+response returns — this goes directly to MinIO, not through the gateway:
+```bash
+curl -X PUT "<uploadUrl from the response above>" \
+  -H "Content-Type: audio/mpeg" \
+  --data-binary @recording.mp3
+```
+
+**Confirm the upload** — verifies the object actually landed in MinIO,
+and (Phase 2.3+) publishes `meeting.uploaded.v1` to kick off
+transcription:
+```bash
+curl -X POST {{base_url}}/meetings/{{meeting_id}}/complete-upload \
+  -H "Authorization: Bearer {{access_token}}"
+```
+
+**Get one meeting**:
+```bash
+curl {{base_url}}/meetings/{{meeting_id}} \
+  -H "Authorization: Bearer {{access_token}}"
+```
+
+**Lightweight status poll**:
+```bash
+curl {{base_url}}/meetings/{{meeting_id}}/status \
+  -H "Authorization: Bearer {{access_token}}"
+```
+
+**List meetings** (supports `?page=&pageSize=`):
+```bash
+curl "{{base_url}}/meetings?page=1&pageSize=20" \
+  -H "Authorization: Bearer {{access_token}}"
+```
+
+**Manually override status** — a Phase 1 debug endpoint (org owner
+only), for simulating the pipeline before Kafka consumers existed; valid
+values are `uploaded`, `transcribing`, `transcribed`, `summarizing`,
+`summarized`, `completed`, `failed`:
+```bash
+curl -X PATCH {{base_url}}/meetings/{{meeting_id}}/status \
+  -H "Authorization: Bearer {{access_token}}" \
+  -H "Content-Type: application/json" \
+  -d '{"status": "completed"}'
+```
+
+**Delete a meeting**:
+```bash
+curl -X DELETE {{base_url}}/meetings/{{meeting_id}} \
+  -H "Authorization: Bearer {{access_token}}"
+```
+
+#### Transcript & Summary (bearer token required, Phase 2.3/2.4)
+
+These only return data once a real Kafka + whisper.cpp + Ollama pipeline
+has actually run (not the case in this sandbox — see the Status section
+above); against a real `docker compose up` with models pulled, they work
+once transcription/summarization for that meeting has completed.
+
+**Get the transcript**:
+```bash
+curl {{base_url}}/meetings/{{meeting_id}}/transcript \
+  -H "Authorization: Bearer {{access_token}}"
+```
+
+**Get the summary**:
+```bash
+curl {{base_url}}/meetings/{{meeting_id}}/summary \
+  -H "Authorization: Bearer {{access_token}}"
+```
+
+**Regenerate the summary** — re-runs the fetch/chunk/summarize pipeline
+synchronously on demand (needs Transcription Service to already have a
+transcript for this meeting, and a reachable Ollama server):
+```bash
+curl -X POST {{base_url}}/meetings/{{meeting_id}}/summary/regenerate \
+  -H "Authorization: Bearer {{access_token}}"
+```
+
+#### Internal service-to-service APIs (debugging only — not through the gateway)
+
+These are called by other services, never by a client, and aren't
+reachable via the gateway — hit each service's own port directly, with
+`X-Internal-Token` set to `internal_service_token` from its config
+(`dev-internal-token` in every `deployments/configs/*.template.json`).
+Listed here for completeness/debugging, not as part of the product API.
+
+```bash
+# User Service — used by Auth Service during signup
+curl -X POST http://localhost:8081/internal/users \
+  -H "X-Internal-Token: dev-internal-token" \
+  -H "Content-Type: application/json" \
+  -d '{"orgId": "{{org_id}}", "email": "alice@acme.com", "name": "Alice", "role": "owner"}'
+
+# User Service — used by Auth Service's login flow to resolve an email to an org
+curl "http://localhost:8081/internal/users/lookup?email=alice@acme.com" \
+  -H "X-Internal-Token: dev-internal-token"
+
+# User Service — used by Auth Service's AcceptInvite flow
+curl -X POST http://localhost:8081/internal/invites/accept \
+  -H "X-Internal-Token: dev-internal-token" \
+  -H "Content-Type: application/json" \
+  -d '{"token": "{{invite_token}}", "name": "Bob"}'
+
+# Organization Service — used by Auth Service during signup
+curl -X POST http://localhost:8082/internal/orgs \
+  -H "X-Internal-Token: dev-internal-token" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Acme Inc"}'
+
+# Transcription Service — used by AI Summary Service to fetch a transcript
+curl "http://localhost:8084/internal/meetings/{{meeting_id}}/transcript?orgId={{org_id}}" \
+  -H "X-Internal-Token: dev-internal-token"
+```
 
 ### Configuration
 
