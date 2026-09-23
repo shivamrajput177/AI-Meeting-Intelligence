@@ -123,10 +123,11 @@ services:
     # and `ai-summary-service` from the service list you pass to
     # `docker compose up` (see README.md's Quickstart).
     #
-    # whisper.cpp's own image also doesn't bundle a model file: download
-    # one with whisper.cpp's models/download-ggml-model.sh (e.g. `base.en`)
-    # into ./whisper-models/ before this container is actually useful —
-    # see README.md.
+    # whisper.cpp's own image doesn't bundle a model file — the
+    # whisper-model-init service below downloads one automatically before
+    # this container starts, so `docker compose up`/`make up` alone is
+    # enough, matching every other service's "no manual setup step"
+    # story in this file.
     image: ghcr.io/ggml-org/whisper.cpp:main
     platform: linux/amd64
     entrypoint: ["/app/build/bin/whisper-server"]
@@ -135,24 +136,72 @@ services:
       - "8090:8080"
     volumes:
       - "./whisper-models:/models:ro"
+    depends_on:
+      whisper-model-init: { condition: service_completed_successfully }
+
+  whisper-model-init:
+    # Downloads whisper.cpp's ggml-base.en.bin (~140MB) into
+    # ./whisper-models/ on first `docker compose up`, skipping the
+    # download on every run after that — the compose equivalent of a
+    # service's own embedded-migrations-on-startup pattern for Postgres,
+    # for a model file instead of a schema. See
+    # deployments/whisper-models/README.md for the manual alternative
+    # (whisper.cpp's own models/download-ggml-model.sh) if you'd rather
+    # fetch a different model size by hand.
+    image: curlimages/curl:8.10.1
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        if [ -f /models/ggml-base.en.bin ]; then
+          echo "whisper-model-init: ggml-base.en.bin already present, skipping"
+        else
+          echo "whisper-model-init: downloading ggml-base.en.bin..."
+          curl -fL -o /models/ggml-base.en.bin.tmp \
+            https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
+          mv /models/ggml-base.en.bin.tmp /models/ggml-base.en.bin
+          echo "whisper-model-init: done"
+        fi
+    volumes:
+      - "./whisper-models:/models"
 
   ollama:
     # Ollama serves the local LLM this service calls for summarization —
     # see docs/architecture/microservices.md §7 and PROJECT_PLAN.md §3's
-    # tech stack row. Unlike whisper.cpp's image, `ollama/ollama` is
-    # Ollama's own official, widely-used image with a stable, simple
-    # contract (serve on :11434, models under /root/.ollama, pull with
-    # `ollama pull <model>`) — still unpulled and unrun in this sandbox
-    # (no container-registry access), but a much more standard target
-    # than whisper's than the `whisper` service's image/command guess.
-    # A model isn't bundled either: `docker compose exec ollama ollama
-    # pull qwen2.5:7b` (or whatever ollama_model configs/*.json name) is
-    # a one-time step before this container is actually useful.
+    # tech stack row. `ollama/ollama` is Ollama's own official image, a
+    # stable, simple contract: serve on :11434, models under
+    # /root/.ollama, pull with `ollama pull <model>` — the
+    # ollama-model-init service below runs that pull automatically.
     image: ollama/ollama:latest
     ports:
       - "11434:11434"
     volumes:
       - "ollamadata:/root/.ollama"
+    healthcheck:
+      # No curl/wget in this image to hit the HTTP API directly — `ollama
+      # list` is the CLI's own lightweight "can I reach the server" call
+      # (same binary as the server, always present).
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
+  ollama-model-init:
+    # Pulls the LLM AI Summary Service calls (see
+    # deployments/configs/docker/ai-summary-service.json's ollama_model)
+    # into the ollama container's model store on first `docker compose
+    # up` — `ollama pull` is itself idempotent (a no-op if already
+    # pulled), so this runs safely on every startup, same as
+    # whisper-model-init's own once-then-skip behavior but implemented
+    # via Ollama's own client instead of a manual file check. A 7B
+    # Q4_K_M model is several GB; expect this step to take a while the
+    # first time, proportional to your connection speed, not a hang.
+    image: ollama/ollama:latest
+    environment:
+      OLLAMA_HOST: "http://ollama:11434"
+    entrypoint: ["ollama"]
+    command: ["pull", "qwen2.5:7b"]
+    depends_on:
+      ollama: { condition: service_healthy }
 
   organization-service:
     build: { context: .., dockerfile: deployments/Dockerfile, args: { SERVICE: organization-service } }
@@ -212,7 +261,8 @@ services:
       postgres: { condition: service_healthy }
       kafka: { condition: service_healthy }
       kafka-init: { condition: service_completed_successfully }
-      ollama: { condition: service_started }
+      ollama: { condition: service_healthy }
+      ollama-model-init: { condition: service_completed_successfully }
       transcription-service: { condition: service_started }
 
   api-gateway:

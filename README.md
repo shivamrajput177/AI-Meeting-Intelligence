@@ -97,18 +97,28 @@ make up
 
 This starts Postgres (with `pgvector` pre-installed for Phase 3), Redis,
 MinIO, Kafka, Ollama, whisper.cpp, all seven backend services, and the web
-app. Each service applies its own schema's migrations automatically on
-startup — nothing to run by hand.
+app — including two one-shot init steps that make this a genuine
+single-command bring-up: `whisper-model-init` downloads whisper.cpp's
+`ggml-base.en.bin` (~140MB) into `deployments/whisper-models/` before
+`whisper` starts, and `ollama-model-init` runs `ollama pull qwen2.5:7b`
+against the `ollama` container before `ai-summary-service` starts. Both
+are idempotent — safe to leave in place on every `make up`, and a no-op
+once the model's already there. Expect the *first* `make up` to take a
+while (a few GB for the Ollama model, proportional to your connection);
+every run after that is fast, since Docker volumes keep both models
+around. Each service also applies its own schema's migrations
+automatically on startup — nothing to run by hand.
 
-**If `whisper`'s image fails to pull** (`no matching manifest for
-linux/arm64/...`) — confirmed on Apple Silicon Macs, since
-`ghcr.io/ggml-org/whisper.cpp` publishes no arm64 build — `docker
-compose` aborts the whole `up`, not just that one container.
-`docker-compose.yaml` now pins `whisper` to `platform: linux/amd64` so it
-at least pulls (via Rosetta emulation, so noticeably slower than native).
-If you don't need the AI transcription/summarization pipeline for what
-you're testing, it's simpler to skip it and everything downstream of it
-entirely by naming only the services you want:
+**Apple Silicon note**: `ghcr.io/ggml-org/whisper.cpp` publishes no
+`linux/arm64` build, so `whisper` is pinned to `platform: linux/amd64`
+and runs under Rosetta emulation — CPU transcription will be noticeably
+slower than on native x86_64, but `make up` itself will complete.
+
+**If you don't need the AI pipeline** (transcript/summary endpoints) for
+what you're testing right now, it's still fine to skip `whisper`,
+`whisper-model-init`, `ollama`, `ollama-model-init`,
+`transcription-service`, and `ai-summary-service` entirely and start
+faster by naming only the services you want:
 ```bash
 docker compose -f deployments/docker-compose.yaml up --build \
   postgres redis minio kafka kafka-init \
@@ -116,9 +126,7 @@ docker compose -f deployments/docker-compose.yaml up --build \
   api-gateway web
 ```
 That covers every Auth/Users/Organizations/Meetings endpoint in the API
-Reference below — just not Transcript/Summary, which need
-`transcription-service`/`ai-summary-service` (and, in turn, `whisper`
-and `ollama`) actually running. Then:
+Reference below — just not Transcript/Summary. Then:
 
 - **Web app**: http://localhost:5173 — sign up, log in, upload a
   recording, watch it show up in your meeting list.
