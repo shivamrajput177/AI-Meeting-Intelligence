@@ -106,16 +106,29 @@ services:
   whisper:
     # whisper.cpp's ASR engine, run as its own server — see
     # docs/architecture/microservices.md §6. UNVERIFIED in a way the
-    # other services here aren't: this sandbox's egress proxy blocks all
-    # container-registry traffic, so this image/command pair has never
-    # actually been pulled or run — treat the exact image tag and
-    # command-line flags as "best effort from whisper.cpp's documented
-    # server usage," not confirmed working. whisper.cpp's own image also
-    # doesn't bundle a model file: download one with whisper.cpp's
-    # models/download-ggml-model.sh (e.g. `base.en`) into
-    # ./whisper-models/ before this container is actually useful — see
-    # README.md.
+    # other services here aren't: this project was built in a sandbox
+    # whose egress proxy blocks all container-registry traffic, so this
+    # image/command pair was never pulled or run there — treat the exact
+    # entrypoint and command-line flags as "best effort from whisper.cpp's
+    # documented server usage," not confirmed working.
+    #
+    # Confirmed separately (a real `docker compose up` on Apple Silicon):
+    # ghcr.io/ggml-org/whisper.cpp:main publishes no linux/arm64 manifest
+    # at all — `platform: linux/amd64` below forces Docker to pull the
+    # x86_64 build and run it under Rosetta emulation instead of failing
+    # the pull outright. That unblocks `docker compose up`, but CPU
+    # inference under emulation will be noticeably slower than native; if
+    # you don't need transcription/summarization for what you're testing,
+    # it's simpler to just omit `whisper`, `ollama`, `transcription-service`,
+    # and `ai-summary-service` from the service list you pass to
+    # `docker compose up` (see README.md's Quickstart).
+    #
+    # whisper.cpp's own image also doesn't bundle a model file: download
+    # one with whisper.cpp's models/download-ggml-model.sh (e.g. `base.en`)
+    # into ./whisper-models/ before this container is actually useful —
+    # see README.md.
     image: ghcr.io/ggml-org/whisper.cpp:main
+    platform: linux/amd64
     entrypoint: ["/app/build/bin/whisper-server"]
     command: ["--host", "0.0.0.0", "--port", "8080", "-m", "/models/ggml-base.en.bin"]
     ports:

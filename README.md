@@ -96,9 +96,29 @@ make up
 (equivalent to `docker compose -f deployments/docker-compose.yaml up --build`)
 
 This starts Postgres (with `pgvector` pre-installed for Phase 3), Redis,
-MinIO, all five backend services, and the web app. Each service applies
-its own schema's migrations automatically on startup — nothing to run by
-hand. Then:
+MinIO, Kafka, Ollama, whisper.cpp, all seven backend services, and the web
+app. Each service applies its own schema's migrations automatically on
+startup — nothing to run by hand.
+
+**If `whisper`'s image fails to pull** (`no matching manifest for
+linux/arm64/...`) — confirmed on Apple Silicon Macs, since
+`ghcr.io/ggml-org/whisper.cpp` publishes no arm64 build — `docker
+compose` aborts the whole `up`, not just that one container.
+`docker-compose.yaml` now pins `whisper` to `platform: linux/amd64` so it
+at least pulls (via Rosetta emulation, so noticeably slower than native).
+If you don't need the AI transcription/summarization pipeline for what
+you're testing, it's simpler to skip it and everything downstream of it
+entirely by naming only the services you want:
+```bash
+docker compose -f deployments/docker-compose.yaml up --build \
+  postgres redis minio kafka kafka-init \
+  organization-service user-service auth-service meeting-service \
+  api-gateway web
+```
+That covers every Auth/Users/Organizations/Meetings endpoint in the API
+Reference below — just not Transcript/Summary, which need
+`transcription-service`/`ai-summary-service` (and, in turn, `whisper`
+and `ollama`) actually running. Then:
 
 - **Web app**: http://localhost:5173 — sign up, log in, upload a
   recording, watch it show up in your meeting list.
