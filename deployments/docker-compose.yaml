@@ -37,16 +37,19 @@ services:
       retries: 10
 
   minio:
-    # Docker Hub delisted the minio/minio repo in late 2025 (MinIO archived
-    # the open-source edition there) — every `latest`/pinned pull from Hub
-    # now 404s as "pull access denied ... repository does not exist". MinIO's
-    # own docker-compose example (github.com/minio/minio) now points at
-    # quay.io instead, which still serves the same images.
-    image: quay.io/minio/minio:RELEASE.2025-09-06T17-38-46Z
+    # MinIO pulled its own images entirely as of 2025-09-24: Docker Hub's
+    # minio/minio 404s ("repository does not exist") and quay.io/minio/minio
+    # now 401s on every tag too (both dead ends, tried in that order here
+    # already). Chainguard mirrors the same minio+mc binaries and stays
+    # anonymously pullable — the fix several other projects landed on this
+    # same week. Its image has no shell, so `mc ready local` needs
+    # MC_HOST_local set (below) instead of an `mc alias set` step.
+    image: cgr.dev/chainguard/minio:latest
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
+      MC_HOST_local: "http://minioadmin:minioadmin@localhost:9000"
     ports:
       - "9000:9000" # S3 API - also what minio_public_endpoint points browsers at
       - "9001:9001" # web console
