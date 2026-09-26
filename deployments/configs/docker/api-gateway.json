@@ -8,5 +8,6 @@
   "org_service_url": "http://organization-service:8080",
   "meeting_service_url": "http://meeting-service:8080",
   "transcription_service_url": "http://transcription-service:8080",
-  "ai_summary_service_url": "http://ai-summary-service:8080"
+  "ai_summary_service_url": "http://ai-summary-service:8080",
+  "action_item_service_url": "http://action-item-service:8080"
 }

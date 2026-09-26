@@ -8,5 +8,6 @@
   "org_service_url": "http://localhost:8082",
   "meeting_service_url": "http://localhost:8083",
   "transcription_service_url": "http://localhost:8084",
-  "ai_summary_service_url": "http://localhost:8085"
+  "ai_summary_service_url": "http://localhost:8085",
+  "action_item_service_url": "http://localhost:8086"
 }

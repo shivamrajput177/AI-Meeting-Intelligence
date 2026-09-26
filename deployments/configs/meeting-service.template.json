@@ -8,5 +8,6 @@
   "minio_secret_key": "minioadmin",
   "minio_bucket": "recordings",
   "minio_use_ssl": false,
-  "kafka_brokers": ["localhost:29092"]
+  "kafka_brokers": ["localhost:29092"],
+  "internal_service_token": "dev-internal-token"
 }

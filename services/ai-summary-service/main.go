@@ -70,7 +70,7 @@ func main() {
 	go ConsumeTranscriptionCompleted(ctx, reader, processTranscript, publisher, log)
 
 	srv := httpserver.New("ai-summary-service", log)
-	RegisterRoutes(srv.Mux, handler)
+	RegisterRoutes(srv.Mux, handler, cfg.InternalServiceToken)
 
 	addr := ":" + cfg.Port
 	log.Info("starting", "addr", addr)

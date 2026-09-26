@@ -109,6 +109,24 @@ type CreateUploadIntentOutput struct {
 	UploadURL string
 }
 
+// Participant is one row of meeting.participants — this service's own
+// internal model, not JSON-tagged (see ParticipantResponse for the wire
+// shape Action Item Service's internal client actually decodes).
+type Participant struct {
+	UserID      *string
+	Email       string
+	DisplayName string
+}
+
+// ParticipantResponse is what GET /internal/meetings/{id}/participants
+// returns — see handler.GetParticipantsInternal's doc comment for who
+// calls this and why it's internal-only.
+type ParticipantResponse struct {
+	UserID      *string `json:"userId,omitempty"`
+	Email       string  `json:"email"`
+	DisplayName string  `json:"displayName"`
+}
+
 // MeetingUploadedEvent is meeting.uploaded.v1's payload (see
 // docs/architecture/kafka-topics.md) — published once ConfirmUpload
 // verifies the recording actually landed in MinIO. Carries everything

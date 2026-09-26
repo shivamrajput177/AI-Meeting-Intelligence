@@ -41,9 +41,10 @@ actually produce: `meeting.uploaded.v1`/`meeting.status-changed.v1`/
 `meeting.deleted.v1` (Meeting Service), `transcription.completed.v1`/
 `transcription.failed.v1` (Transcription Service),
 `chunk.created.v1`/`summary.completed.v1`/`summary.failed.v1` (AI Summary
-Service), and `action-item.extracted.v1`/`action-item.status-changed.v1`
-(Action Item Service) — the four services docs/ROADMAP.md's Phase 2
-builds. The rest of the catalog below is created once the phase that
+Service), and `action-item.extracted.v1`/`action-item.extraction-failed.v1`/
+`action-item.status-changed.v1` (Action Item Service) — the four services
+docs/ROADMAP.md's Phase 2 builds. The rest of the catalog below is created
+once the phase that
 builds its producer (Auth/User/Org's own events, Search, Notification,
 Analytics) lands, the same way this script itself didn't exist before
 Phase 2 needed it.
@@ -66,6 +67,7 @@ Phase 2 needed it.
 | `summary.completed.v1` | AI Summary Service | Meeting Service, Action Item, Notification, Analytics | `meeting_id` | 12 | 30d | Summary ready |
 | `summary.failed.v1` | AI Summary Service | Notification | `meeting_id` | 12 | 7d | LLM failure |
 | `action-item.extracted.v1` | Action Item Service | Meeting Service, Notification, Analytics | `meeting_id` | 12 | 30d | Batch of items extracted |
+| `action-item.extraction-failed.v1` | Action Item Service | Notification | `meeting_id` | 12 | 7d | Extraction failure |
 | `action-item.status-changed.v1` | Action Item Service | Analytics, Notification | `action_item_id` | 6 | 30d | Owner marks done/in-progress |
 | `action-item.jira-requested.v1` | Action Item Service (via gateway) | Notification Service | `action_item_id` | 6 | 7d | User asked to file a Jira ticket |
 | `action-item.reminder-due.v1` | Notification Service (scheduler) | Notification Service (dispatcher) | `action_item_id` | 6 | 1d | Reminder fired |

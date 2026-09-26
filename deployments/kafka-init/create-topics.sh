@@ -46,6 +46,7 @@ create_topic summary.failed.v1                    12 $((7 * DAY))
 
 create_topic action-item.extracted.v1             12 $((30 * DAY))
 create_topic action-item.extracted.v1.dlq         12 $((30 * DAY))
+create_topic action-item.extraction-failed.v1     12 $((7 * DAY))
 create_topic action-item.status-changed.v1         6 $((30 * DAY))
 create_topic action-item.status-changed.v1.dlq     6 $((30 * DAY))
 

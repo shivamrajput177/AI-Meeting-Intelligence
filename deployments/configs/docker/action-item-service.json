@@ -1,0 +1,11 @@
+{
+  "port": "8080",
+  "log_level": "info",
+  "database_url": "postgres://postgres:postgres@postgres:5432/meetingintel",
+  "summary_service_url": "http://ai-summary-service:8080",
+  "meeting_service_url": "http://meeting-service:8080",
+  "internal_service_token": "dev-internal-token",
+  "ollama_url": "http://ollama:11434",
+  "ollama_model": "qwen2.5:7b",
+  "kafka_brokers": ["kafka:9092"]
+}

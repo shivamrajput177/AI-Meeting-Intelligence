@@ -32,3 +32,13 @@ func (uc *ListMeetingsUseCase) ListMeetings(ctx context.Context, orgID string, f
 	}
 	return uc.repo.List(ctx, orgID, filter)
 }
+
+type GetParticipantsUseCase struct{ repo repository.Repository }
+
+func NewGetParticipantsUseCase(repo repository.Repository) *GetParticipantsUseCase {
+	return &GetParticipantsUseCase{repo}
+}
+
+func (uc *GetParticipantsUseCase) GetParticipants(ctx context.Context, orgID, meetingID string) ([]*entity.Participant, error) {
+	return uc.repo.ListParticipants(ctx, orgID, meetingID)
+}

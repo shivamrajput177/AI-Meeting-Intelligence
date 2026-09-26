@@ -302,7 +302,8 @@ actionitem.reminders(id UUID PK, action_item_id UUID, remind_at TIMESTAMPTZ,
 ```
 
 **Kafka produced**: `action-item.extracted.v1` (batch per meeting, key:
-`meeting_id`), `action-item.status-changed.v1`, `action-item.jira-requested.v1`.
+`meeting_id`), `action-item.extraction-failed.v1`, `action-item.status-changed.v1`,
+`action-item.jira-requested.v1`.
 **Kafka consumed**: `summary.completed.v1`.
 
 **Scaling**: KEDA on consumer lag; extraction is a single LLM call per

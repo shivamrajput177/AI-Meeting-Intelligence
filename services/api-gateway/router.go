@@ -22,6 +22,7 @@ type ServiceURLs struct {
 	Meeting       string
 	Transcription string
 	AISummary     string
+	ActionItem    string
 }
 
 // Register mounts every /api/v1/... route documented in
@@ -93,4 +94,14 @@ func Register(mux *http.ServeMux, urls ServiceURLs, jwtSecret []byte, rdb *redis
 
 	protect("/api/v1/meetings/{id}/summary", urls.AISummary)
 	protect("/api/v1/meetings/{id}/summary/regenerate", urls.AISummary)
+
+	protect("/api/v1/meetings/{id}/action-items", urls.ActionItem)
+	protect("/api/v1/action-items", urls.ActionItem)
+	// PATCH /action-items/{id} is "member+ (owner or admin)" per
+	// docs/architecture/api-spec.md — a per-resource check (is this
+	// caller the item's assigned owner?) the gateway's role-only
+	// RequireRole can't express, so it's just auth-protected here and
+	// re-checked inside action-item-service itself (see its
+	// UpdateActionItemUseCase).
+	protect("/api/v1/action-items/{id}", urls.ActionItem)
 }

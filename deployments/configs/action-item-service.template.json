@@ -1,0 +1,11 @@
+{
+  "port": "8086",
+  "log_level": "info",
+  "database_url": "postgres://postgres:postgres@localhost:5432/meetingintel",
+  "summary_service_url": "http://localhost:8085",
+  "meeting_service_url": "http://localhost:8083",
+  "internal_service_token": "dev-internal-token",
+  "ollama_url": "http://localhost:11434",
+  "ollama_model": "qwen2.5:7b",
+  "kafka_brokers": ["localhost:29092"]
+}

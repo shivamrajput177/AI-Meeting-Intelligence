@@ -38,6 +38,7 @@ type serviceConfig struct {
 	MinIOBucket           string   `json:"minio_bucket"`
 	MinIOUseSSL           bool     `json:"minio_use_ssl"`
 	KafkaBrokers          []string `json:"kafka_brokers"`
+	InternalServiceToken  string   `json:"internal_service_token"`
 }
 
 func main() {
@@ -62,10 +63,11 @@ func main() {
 		usecase.NewListMeetingsUseCase(repo),
 		usecase.NewUpdateStatusUseCase(repo),
 		usecase.NewDeleteMeetingUseCase(repo, storage),
+		usecase.NewGetParticipantsUseCase(repo),
 	)
 
 	srv := httpserver.New("meeting-service", log)
-	RegisterRoutes(srv.Mux, handler)
+	RegisterRoutes(srv.Mux, handler, cfg.InternalServiceToken)
 
 	addr := ":" + cfg.Port
 	log.Info("starting", "addr", addr)

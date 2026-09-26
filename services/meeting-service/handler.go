@@ -21,6 +21,7 @@ type Handler struct {
 	listMeetings       *usecase.ListMeetingsUseCase
 	updateStatus       *usecase.UpdateStatusUseCase
 	deleteMeeting      *usecase.DeleteMeetingUseCase
+	getParticipants    *usecase.GetParticipantsUseCase
 }
 
 func NewHandler(
@@ -30,11 +31,13 @@ func NewHandler(
 	listMeetings *usecase.ListMeetingsUseCase,
 	updateStatus *usecase.UpdateStatusUseCase,
 	deleteMeeting *usecase.DeleteMeetingUseCase,
+	getParticipants *usecase.GetParticipantsUseCase,
 ) *Handler {
 	return &Handler{
 		createUploadIntent: createUploadIntent, confirmUpload: confirmUpload,
 		getMeeting: getMeeting, listMeetings: listMeetings,
 		updateStatus: updateStatus, deleteMeeting: deleteMeeting,
+		getParticipants: getParticipants,
 	}
 }
 
@@ -135,6 +138,30 @@ func (h *Handler) UpdateStatus(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	httpserver.JSON(w, http.StatusOK, toMeetingResponse(meeting))
+	return nil
+}
+
+// GetParticipantsInternal serves GET /internal/meetings/{id}/participants
+// — Action Item Service's own read for best-guess owner matching (see
+// docs/architecture/microservices.md §8). orgId travels as an explicit
+// query parameter rather than reqctx.OrgID, the same "internal caller
+// states its own org_id" pattern transcription-service's
+// GetTranscriptInternal already uses, for the same reason: there's no
+// gateway-set JWT/org context on a direct service-to-service call.
+func (h *Handler) GetParticipantsInternal(w http.ResponseWriter, r *http.Request) error {
+	orgID := r.URL.Query().Get("orgId")
+	if orgID == "" {
+		return apperr.BadRequest("orgId query parameter is required")
+	}
+	participants, err := h.getParticipants.GetParticipants(r.Context(), orgID, r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	resp := make([]entity.ParticipantResponse, len(participants))
+	for i, p := range participants {
+		resp[i] = entity.ParticipantResponse{UserID: p.UserID, Email: p.Email, DisplayName: p.DisplayName}
+	}
+	httpserver.JSON(w, http.StatusOK, resp)
 	return nil
 }
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/ai-summary-service/entity"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/ai-summary-service/usecase"
+	"github.com/shivamrajput177/ai-meeting-intelligence/shared/apperr"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/httpserver"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/reqctx"
 )
@@ -32,6 +33,26 @@ func toSummaryResponse(s *entity.Summary) entity.SummaryResponse {
 
 func (h *Handler) GetSummary(w http.ResponseWriter, r *http.Request) error {
 	orgID := reqctx.OrgID(r.Context())
+	summary, err := h.getSummary.GetSummary(r.Context(), orgID, r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	httpserver.JSON(w, http.StatusOK, toSummaryResponse(summary))
+	return nil
+}
+
+// GetSummaryInternal is the same read, reachable at
+// /internal/meetings/{id}/summary instead — this is what Action Item
+// Service (Phase 2.5) actually calls to fetch the summary text it
+// extracts action items from, the same "internal caller states its own
+// org_id" pattern transcription-service's GetTranscriptInternal already
+// uses, for the same reason: no gateway-set JWT/org context on a direct
+// service-to-service call.
+func (h *Handler) GetSummaryInternal(w http.ResponseWriter, r *http.Request) error {
+	orgID := r.URL.Query().Get("orgId")
+	if orgID == "" {
+		return apperr.BadRequest("orgId query parameter is required")
+	}
 	summary, err := h.getSummary.GetSummary(r.Context(), orgID, r.PathValue("id"))
 	if err != nil {
 		return err

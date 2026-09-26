@@ -21,4 +21,10 @@ type Repository interface {
 	UpdateStatus(ctx context.Context, orgID, id, status string) error
 	Touch(ctx context.Context, orgID, id string) error
 	Delete(ctx context.Context, orgID, id string) error
+
+	// ListParticipants is org-scoped via a join against meeting.meetings —
+	// meeting.participants itself has no org_id column (see
+	// migrations/0001_init.up.sql), so the join is the enforcement here,
+	// same explicit-filter discipline as every other query in this file.
+	ListParticipants(ctx context.Context, orgID, meetingID string) ([]*entity.Participant, error)
 }

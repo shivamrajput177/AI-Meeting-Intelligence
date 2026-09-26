@@ -129,6 +129,40 @@ func (r *MeetingRepository) Touch(ctx context.Context, orgID, id string) error {
 	})
 }
 
+// ListParticipants joins through meeting.meetings for org scoping — see
+// repository.Repository.ListParticipants's doc comment for why (the
+// participants table itself carries no org_id).
+func (r *MeetingRepository) ListParticipants(ctx context.Context, orgID, meetingID string) ([]*entity.Participant, error) {
+	var items []*entity.Participant
+	err := dbx.WithTenantTx(ctx, r.pool, orgID, func(ctx context.Context, tx pgx.Tx) error {
+		rows, err := tx.Query(ctx,
+			`SELECT p.user_id, p.email, p.display_name
+			 FROM meeting.participants p
+			 JOIN meeting.meetings m ON m.id = p.meeting_id
+			 WHERE p.meeting_id = $1 AND m.org_id = $2`,
+			meetingID, orgID,
+		)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var p entity.Participant
+			var displayName *string
+			if err := rows.Scan(&p.UserID, &p.Email, &displayName); err != nil {
+				return err
+			}
+			if displayName != nil {
+				p.DisplayName = *displayName
+			}
+			items = append(items, &p)
+		}
+		return rows.Err()
+	})
+	return items, err
+}
+
 func (r *MeetingRepository) Delete(ctx context.Context, orgID, id string) error {
 	return dbx.WithTenantTx(ctx, r.pool, orgID, func(ctx context.Context, tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, `DELETE FROM meeting.meetings WHERE id = $1 AND org_id = $2`, id, orgID)

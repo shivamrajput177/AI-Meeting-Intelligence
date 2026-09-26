@@ -21,7 +21,7 @@ hand-written REST/JSON; there's no gRPC or protobuf codegen anywhere in
 this design (see `docs/architecture/microservices.md` §"Internal
 Communication" for why).
 
-## Status: Phase 1 (MVP) implemented, Phase 2.1–2.4 implemented
+## Status: Phase 1 (MVP) implemented, Phase 2.1–2.5 implemented
 
 Auth, User, Organization, and Meeting services, the API Gateway, and a
 React web app are built and running — signup, login, JWT refresh/rotation,
@@ -62,21 +62,40 @@ decisions, risks, blockers), persists both, and publishes
 live behind the gateway — regenerate just re-runs the same pipeline
 synchronously.
 
-**Not live-verified in this sandbox, for either 2.3 or 2.4**: the egress
+Phase 2.5's Action Item Service is in as well: it consumes
+`summary.completed.v1`, fetches the summary from AI Summary Service's new
+internal endpoint (`GET /internal/meetings/{id}/summary`) and the
+meeting's participant list from Meeting Service's new internal endpoint
+(`GET /internal/meetings/{id}/participants`) — both guarded the same
+shared-secret-token way every other `/internal/*` route in this repo is —
+runs a structured-extraction prompt against Ollama for actionable items
+(with a best-guess owner matched against those participants and a due
+date when one's mentioned), turns the summary's own already-extracted key
+decisions/risks/blockers into rows alongside them (no second LLM call
+needed for those), persists the batch, and publishes
+`action-item.extracted.v1`/`action-item.extraction-failed.v1`. `GET
+/meetings/{id}/action-items`, `GET /action-items`, `GET
+/action-items/{id}`, and `PATCH /action-items/{id}` (status/owner/due-date
+updates, restricted to the item's own owner or an org owner/admin) are
+live behind the gateway.
+
+**Not live-verified in this sandbox, for 2.3, 2.4, or 2.5**: the egress
 proxy here blocks all container-registry traffic, so the Kafka broker, a
 real whisper.cpp server, and a real Ollama server have never actually
-been run — the business logic (including the chunking algorithm) is
-verified by unit test with fakes, and each service's REST+Postgres read
-path is verified against a seeded row; the docker-compose config itself
-is unverified past `docker compose config` syntax validation. See
-`docs/architecture/database-schema.md`'s "Row-Level Security pattern"
-section for a related, now-fixed finding: every repository query in this
-project filters by `org_id` explicitly rather than relying on Postgres
-RLS, which turned out to be silently inert (every service connects as
-the table owner/superuser, which RLS never applies to). Phase 2 onward
-remains ahead: action-item extraction, and giving each service's DB
-connection its own non-superuser role so RLS becomes real defense-in-depth
-again.
+been run — the business logic (including the chunking and owner-matching
+algorithms) is verified by unit test with fakes, and each service's
+REST+Postgres read path is verified against a seeded row; the
+docker-compose config itself is unverified past `docker compose config`
+syntax validation. See `docs/architecture/database-schema.md`'s
+"Row-Level Security pattern" section for a related, now-fixed finding:
+every repository query in this project filters by `org_id` explicitly
+rather than relying on Postgres RLS, which turned out to be silently
+inert (every service connects as the table owner/superuser, which RLS
+never applies to). Phase 2 onward remains ahead: wiring Meeting Service's
+own status field to advance off these Kafka events instead of only its
+Phase 1 manual debug endpoint (2.6), basic observability (2.7), and
+giving each service's DB connection its own non-superuser role so RLS
+becomes real defense-in-depth again.
 
 The backend is a **Go workspace** (`go.work` at the repo root): `shared/`
 is its own Go module with no `internal/` in its path, so every
@@ -96,12 +115,13 @@ make up
 (equivalent to `docker compose -f deployments/docker-compose.yaml up --build`)
 
 This starts Postgres (with `pgvector` pre-installed for Phase 3), Redis,
-MinIO, Kafka, Ollama, whisper.cpp, all seven backend services, and the web
+MinIO, Kafka, Ollama, whisper.cpp, all eight backend services, and the web
 app — including two one-shot init steps that make this a genuine
 single-command bring-up: `whisper-model-init` downloads whisper.cpp's
 `ggml-base.en.bin` (~140MB) into `deployments/whisper-models/` before
 `whisper` starts, and `ollama-model-init` runs `ollama pull qwen2.5:7b`
-against the `ollama` container before `ai-summary-service` starts. Both
+against the `ollama` container before `ai-summary-service` **and**
+`action-item-service` start (both call the same model). Both init steps
 are idempotent — safe to leave in place on every `make up`, and a no-op
 once the model's already there. Expect the *first* `make up` to take a
 while (a few GB for the Ollama model, proportional to your connection);
@@ -114,11 +134,11 @@ automatically on startup — nothing to run by hand.
 and runs under Rosetta emulation — CPU transcription will be noticeably
 slower than on native x86_64, but `make up` itself will complete.
 
-**If you don't need the AI pipeline** (transcript/summary endpoints) for
-what you're testing right now, it's still fine to skip `whisper`,
-`whisper-model-init`, `ollama`, `ollama-model-init`,
-`transcription-service`, and `ai-summary-service` entirely and start
-faster by naming only the services you want:
+**If you don't need the AI pipeline** (transcript/summary/action-item
+endpoints) for what you're testing right now, it's still fine to skip
+`whisper`, `whisper-model-init`, `ollama`, `ollama-model-init`,
+`transcription-service`, `ai-summary-service`, and `action-item-service`
+entirely and start faster by naming only the services you want:
 ```bash
 docker compose -f deployments/docker-compose.yaml up --build \
   postgres redis minio kafka kafka-init \
@@ -126,7 +146,7 @@ docker compose -f deployments/docker-compose.yaml up --build \
   api-gateway web
 ```
 That covers every Auth/Users/Organizations/Meetings endpoint in the API
-Reference below — just not Transcript/Summary. Then:
+Reference below — just not Transcript/Summary/Action Items. Then:
 
 - **Web app**: http://localhost:5173 — sign up, log in, upload a
   recording, watch it show up in your meeting list.
@@ -170,6 +190,7 @@ against your environment automatically. To run a command with plain
 | `user_id` | *(empty)* | `id` in `GET /users/me`'s response |
 | `role` | *(empty)* | `role` in `GET /users/me`'s response — `POST /auth/refresh` needs this |
 | `meeting_id` | *(empty)* | `meetingId` in `POST /meetings`'s response |
+| `action_item_id` | *(empty)* | `id` of any entry in `GET /meetings/{{meeting_id}}/action-items`'s `data` array |
 | `invite_token` | *(empty)* | logged by user-service as `dev_invite_token` (see `POST /orgs/{orgId}/invites` below) |
 | `reset_token` | *(empty)* | logged by auth-service as `dev_reset_token`, or `devToken` in the response if `auth_dev_expose_reset_token: true` |
 
@@ -407,6 +428,43 @@ curl -X POST {{base_url}}/meetings/{{meeting_id}}/summary/regenerate \
   -H "Authorization: Bearer {{access_token}}"
 ```
 
+#### Action Items (bearer token required, Phase 2.5)
+
+Like Transcript & Summary above, these only populate once
+`summary.completed.v1` has actually been consumed by Action Item Service
+for that meeting — not the case in this sandbox (see the Status section
+above); against a real `docker compose up`, they work once
+summarization for that meeting has completed.
+
+**List action items for one meeting**:
+```bash
+curl {{base_url}}/meetings/{{meeting_id}}/action-items \
+  -H "Authorization: Bearer {{access_token}}"
+```
+
+**List action items across meetings** — filters are all optional
+(`owner`, `status`, `type`, `dueBefore`, `page`, `pageSize`):
+```bash
+curl "{{base_url}}/action-items?status=open&type=action" \
+  -H "Authorization: Bearer {{access_token}}"
+```
+
+**Get one action item**:
+```bash
+curl {{base_url}}/action-items/{{action_item_id}} \
+  -H "Authorization: Bearer {{access_token}}"
+```
+
+**Update an action item** — status, owner, and/or due date; only the
+item's own assigned owner or an org owner/admin may do this (every field
+is optional, send just the one(s) you're changing):
+```bash
+curl -X PATCH {{base_url}}/action-items/{{action_item_id}} \
+  -H "Authorization: Bearer {{access_token}}" \
+  -H "Content-Type: application/json" \
+  -d '{"status": "in_progress"}'
+```
+
 #### Internal service-to-service APIs (debugging only — not through the gateway)
 
 These are called by other services, never by a client, and aren't
@@ -441,6 +499,14 @@ curl -X POST http://localhost:8082/internal/orgs \
 # Transcription Service — used by AI Summary Service to fetch a transcript
 curl "http://localhost:8084/internal/meetings/{{meeting_id}}/transcript?orgId={{org_id}}" \
   -H "X-Internal-Token: dev-internal-token"
+
+# AI Summary Service — used by Action Item Service to fetch a summary
+curl "http://localhost:8085/internal/meetings/{{meeting_id}}/summary?orgId={{org_id}}" \
+  -H "X-Internal-Token: dev-internal-token"
+
+# Meeting Service — used by Action Item Service for best-guess owner matching
+curl "http://localhost:8083/internal/meetings/{{meeting_id}}/participants?orgId={{org_id}}" \
+  -H "X-Internal-Token: dev-internal-token"
 ```
 
 ### Configuration
@@ -466,7 +532,7 @@ above.
 
 ```bash
 make configs   # seed deployments/configs/*.json from the checked-in templates
-make build     # compiles every module (shared + all 5 services)
+make build     # compiles every module (shared + every service)
 make vet
 make test      # unit tests — jwtutil, passwordutil, and a usecase test
                # against an in-memory fake repository (no DB needed)

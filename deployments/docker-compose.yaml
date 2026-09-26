@@ -273,6 +273,20 @@ services:
       ollama-model-init: { condition: service_completed_successfully }
       transcription-service: { condition: service_started }
 
+  action-item-service:
+    build: { context: .., dockerfile: deployments/Dockerfile, args: { SERVICE: action-item-service } }
+    volumes:
+      - "./configs/docker/action-item-service.json:/app/deployments/configs/action-item-service.json:ro"
+    ports: ["8086:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      kafka-init: { condition: service_completed_successfully }
+      ollama: { condition: service_healthy }
+      ollama-model-init: { condition: service_completed_successfully }
+      meeting-service: { condition: service_started }
+      ai-summary-service: { condition: service_started }
+
   api-gateway:
     build: { context: .., dockerfile: deployments/Dockerfile, args: { SERVICE: api-gateway } }
     volumes:
@@ -286,6 +300,7 @@ services:
       meeting-service: { condition: service_started }
       transcription-service: { condition: service_started }
       ai-summary-service: { condition: service_started }
+      action-item-service: { condition: service_started }
 
   web:
     # VITE_API_BASE_URL must be a build arg, not a runtime environment
