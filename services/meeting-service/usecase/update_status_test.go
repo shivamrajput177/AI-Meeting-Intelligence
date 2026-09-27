@@ -46,10 +46,16 @@ func (f *fakeRepository) ListParticipants(context.Context, string, string) ([]*e
 // fakePublisher is an in-memory stand-in for the real Kafka producer.
 type fakePublisher struct {
 	mu            sync.Mutex
+	uploaded      []entity.MeetingUploadedEvent
+	uploadedCtx   []context.Context
 	statusChanged []entity.MeetingStatusChangedEvent
 }
 
-func (f *fakePublisher) PublishMeetingUploaded(context.Context, entity.MeetingUploadedEvent) error {
+func (f *fakePublisher) PublishMeetingUploaded(ctx context.Context, event entity.MeetingUploadedEvent) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.uploaded = append(f.uploaded, event)
+	f.uploadedCtx = append(f.uploadedCtx, ctx)
 	return nil
 }
 func (f *fakePublisher) PublishMeetingStatusChanged(_ context.Context, event entity.MeetingStatusChangedEvent) error {

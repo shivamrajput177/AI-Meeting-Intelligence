@@ -16,7 +16,9 @@ import (
 
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/entity"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/usecase"
+	"github.com/shivamrajput177/ai-meeting-intelligence/shared/kafkax"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/logger"
+	"github.com/shivamrajput177/ai-meeting-intelligence/shared/reqctx"
 )
 
 // Topic names mirror each producing service's own events/kafka package —
@@ -75,8 +77,16 @@ func consumeStatusEvent(ctx context.Context, reader *kafkago.Reader, updateStatu
 			continue
 		}
 
-		if _, err := updateStatus.UpdateStatus(ctx, event.OrgID, event.MeetingID, targetStatus); err != nil {
-			log.Error("advance meeting status", "topic", topic, "meeting_id", event.MeetingID, "target_status", targetStatus, "err", err)
+		// See shared/kafkax's doc comment on HeaderTraceparent: msgCtx (not
+		// ctx) carries this message's trace forward into UpdateStatus's own
+		// meeting.status-changed.v1 publish — ctx itself stays the loop's
+		// own long-lived context, used only for FetchMessage/CommitMessages.
+		traceparent := kafkax.ChildTraceparent(kafkax.TraceparentFromHeaders(msg.Headers))
+		msgCtx := reqctx.WithTraceparent(ctx, traceparent)
+
+		if _, err := updateStatus.UpdateStatus(msgCtx, event.OrgID, event.MeetingID, targetStatus); err != nil {
+			log.Error("advance meeting status", "topic", topic, "meeting_id", event.MeetingID,
+				"trace_id", kafkax.TraceIDOf(traceparent), "target_status", targetStatus, "err", err)
 		}
 
 		if err := reader.CommitMessages(ctx, msg); err != nil {

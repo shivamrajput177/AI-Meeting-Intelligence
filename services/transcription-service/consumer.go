@@ -19,7 +19,9 @@ import (
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/transcription-service/entity"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/transcription-service/events"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/transcription-service/usecase"
+	"github.com/shivamrajput177/ai-meeting-intelligence/shared/kafkax"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/logger"
+	"github.com/shivamrajput177/ai-meeting-intelligence/shared/reqctx"
 )
 
 // topicMeetingUploaded mirrors meetingsvc/events/kafka's
@@ -55,21 +57,29 @@ func ConsumeMeetingUploaded(ctx context.Context, reader *kafkago.Reader, process
 			continue
 		}
 
+		// See shared/kafkax's doc comment on HeaderTraceparent: msgCtx (not
+		// ctx) carries this message's trace forward into both the usecase
+		// call and whatever it publishes — ctx itself stays the loop's own
+		// long-lived context, used only for FetchMessage/CommitMessages.
+		traceparent := kafkax.ChildTraceparent(kafkax.TraceparentFromHeaders(msg.Headers))
+		msgCtx := reqctx.WithTraceparent(ctx, traceparent)
+		traceID := kafkax.TraceIDOf(traceparent)
+
 		var procErr error
 		for attempt := 1; attempt <= maxAttempts; attempt++ {
-			if _, procErr = processUpload.ProcessUpload(ctx, event); procErr == nil {
+			if _, procErr = processUpload.ProcessUpload(msgCtx, event); procErr == nil {
 				break
 			}
-			log.Error("process meeting.uploaded.v1", "meeting_id", event.MeetingID, "attempt", attempt, "err", procErr)
+			log.Error("process meeting.uploaded.v1", "meeting_id", event.MeetingID, "trace_id", traceID, "attempt", attempt, "err", procErr)
 			if attempt < maxAttempts {
 				time.Sleep(time.Duration(attempt) * 2 * time.Second)
 			}
 		}
 		if procErr != nil {
-			if err := publisher.PublishTranscriptionFailed(ctx, entity.TranscriptionFailedEvent{
+			if err := publisher.PublishTranscriptionFailed(msgCtx, entity.TranscriptionFailedEvent{
 				MeetingID: event.MeetingID, OrgID: event.OrgID, Reason: procErr.Error(),
 			}); err != nil {
-				log.Error("publish transcription.failed.v1", "meeting_id", event.MeetingID, "err", err)
+				log.Error("publish transcription.failed.v1", "meeting_id", event.MeetingID, "trace_id", traceID, "err", err)
 			}
 		}
 

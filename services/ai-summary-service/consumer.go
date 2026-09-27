@@ -20,7 +20,9 @@ import (
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/ai-summary-service/entity"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/ai-summary-service/events"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/ai-summary-service/usecase"
+	"github.com/shivamrajput177/ai-meeting-intelligence/shared/kafkax"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/logger"
+	"github.com/shivamrajput177/ai-meeting-intelligence/shared/reqctx"
 )
 
 // topicTranscriptionCompleted mirrors
@@ -56,21 +58,29 @@ func ConsumeTranscriptionCompleted(ctx context.Context, reader *kafkago.Reader, 
 			continue
 		}
 
+		// See shared/kafkax's doc comment on HeaderTraceparent: msgCtx (not
+		// ctx) carries this message's trace forward into both the usecase
+		// call and whatever it publishes — ctx itself stays the loop's own
+		// long-lived context, used only for FetchMessage/CommitMessages.
+		traceparent := kafkax.ChildTraceparent(kafkax.TraceparentFromHeaders(msg.Headers))
+		msgCtx := reqctx.WithTraceparent(ctx, traceparent)
+		traceID := kafkax.TraceIDOf(traceparent)
+
 		var procErr error
 		for attempt := 1; attempt <= maxAttempts; attempt++ {
-			if _, procErr = processTranscript.ProcessTranscript(ctx, event.OrgID, event.MeetingID); procErr == nil {
+			if _, procErr = processTranscript.ProcessTranscript(msgCtx, event.OrgID, event.MeetingID); procErr == nil {
 				break
 			}
-			log.Error("process transcription.completed.v1", "meeting_id", event.MeetingID, "attempt", attempt, "err", procErr)
+			log.Error("process transcription.completed.v1", "meeting_id", event.MeetingID, "trace_id", traceID, "attempt", attempt, "err", procErr)
 			if attempt < maxAttempts {
 				time.Sleep(time.Duration(attempt) * 2 * time.Second)
 			}
 		}
 		if procErr != nil {
-			if err := publisher.PublishSummaryFailed(ctx, entity.SummaryFailedEvent{
+			if err := publisher.PublishSummaryFailed(msgCtx, entity.SummaryFailedEvent{
 				MeetingID: event.MeetingID, OrgID: event.OrgID, Reason: procErr.Error(),
 			}); err != nil {
-				log.Error("publish summary.failed.v1", "meeting_id", event.MeetingID, "err", err)
+				log.Error("publish summary.failed.v1", "meeting_id", event.MeetingID, "trace_id", traceID, "err", err)
 			}
 		}
 

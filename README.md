@@ -21,7 +21,7 @@ hand-written REST/JSON; there's no gRPC or protobuf codegen anywhere in
 this design (see `docs/architecture/microservices.md` §"Internal
 Communication" for why).
 
-## Status: Phase 1 (MVP) implemented, Phase 2.1–2.6 implemented
+## Status: Phase 1 (MVP) implemented, Phase 2 (2.1–2.7) fully implemented
 
 Auth, User, Organization, and Meeting services, the API Gateway, and a
 React web app are built and running — signup, login, JWT refresh/rotation,
@@ -95,21 +95,46 @@ specifically are never set by anything, since no service publishes a
 meeting currently jumps straight from `uploaded` to `transcribed` with
 nothing in between.
 
-**Not live-verified in this sandbox, for 2.3 through 2.6**: the egress
+Phase 2.7's basic observability closes out Phase 2: structured
+(`key=value`) logging via `shared/logger` was already universal from
+Phase 1, so the actual gap here was distributed tracing across the Kafka
+boundary specifically — the thing the roadmap calls out as "much harder
+to retrofit" than to build now. `shared/kafkax` hand-generates and parses
+a W3C `traceparent` string (`00-{trace-id}-{span-id}-01`) rather than
+pulling in the full OTel SDK: there's no Collector/Tempo backend to send
+real spans to yet (that's Phase 6, once one exists), but the wire format
+is the same either way, so adopting real OTel later needs no
+producer/consumer changes, just a real span recorded behind the same
+header. `meeting-service`'s `ConfirmUploadUseCase` mints a fresh trace
+the moment a meeting is confirmed uploaded; every Kafka message published
+anywhere downstream of it (by Transcription, AI Summary, Action Item, or
+Meeting Service's own status-changed events) carries a `ChildTraceparent`
+of that same trace-id as a message header, and every consumer logs it
+as `trace_id=...` — so `grep trace_id=<id>` across all four services'
+logs shows one meeting's entire pipeline run, in order, with zero
+backend required to view it. Internal HTTP calls (e.g. Action Item
+Service fetching a summary from AI Summary Service) aren't part of this
+propagation chain yet — that's full request/async instrumentation
+end-to-end, which is Phase 6's job once OTel's actual SDK is in the
+picture.
+
+**Not live-verified in this sandbox, for 2.3 through 2.7**: the egress
 proxy here blocks all container-registry traffic, so the Kafka broker, a
 real whisper.cpp server, and a real Ollama server have never actually
 been run — the business logic (including the chunking, owner-matching,
-and status-mapping) is verified by unit test with fakes, and each
-service's REST+Postgres read path is verified against a seeded row; the
-docker-compose config itself is unverified past `docker compose config`
-syntax validation. See `docs/architecture/database-schema.md`'s
-"Row-Level Security pattern" section for a related, now-fixed finding:
-every repository query in this project filters by `org_id` explicitly
-rather than relying on Postgres RLS, which turned out to be silently
-inert (every service connects as the table owner/superuser, which RLS
-never applies to). Phase 2 onward remains ahead: basic observability
-(2.7), and giving each service's DB connection its own non-superuser
-role so RLS becomes real defense-in-depth again.
+status-mapping, and trace propagation) is verified by unit test with
+fakes, and each service's REST+Postgres read path is verified against a
+seeded row; the docker-compose config itself is unverified past
+`docker compose config` syntax validation. See
+`docs/architecture/database-schema.md`'s "Row-Level Security pattern"
+section for a related, now-fixed finding: every repository query in this
+project filters by `org_id` explicitly rather than relying on Postgres
+RLS, which turned out to be silently inert (every service connects as
+the table owner/superuser, which RLS never applies to). **Phase 2 is
+now fully implemented** — Phase 3 (Search & RAG) is next; giving each
+service's DB connection its own non-superuser role so RLS becomes real
+defense-in-depth again remains an open follow-up, not tied to any one
+phase.
 
 The backend is a **Go workspace** (`go.work` at the repo root): `shared/`
 is its own Go module with no `internal/` in its path, so every

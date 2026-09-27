@@ -17,6 +17,7 @@ const (
 	keyOrgID
 	keyRole
 	keyRequestID
+	keyTraceparent
 )
 
 func WithUserID(ctx context.Context, userID string) context.Context {
@@ -52,6 +53,25 @@ func WithRequestID(ctx context.Context, id string) context.Context {
 
 func RequestID(ctx context.Context) string {
 	v, _ := ctx.Value(keyRequestID).(string)
+	return v
+}
+
+// WithTraceparent/Traceparent carry a W3C traceparent string
+// ("00-{trace-id}-{span-id}-{flags}") across the Kafka async boundary —
+// see shared/kafkax's doc comment for how it's generated, propagated
+// through Kafka message headers, and why Phase 2.7 hand-rolls this format
+// instead of pulling in the full OTel SDK. A Kafka consumer sets this on
+// ctx (via kafkax.ChildTraceparent off the fetched message's headers)
+// before calling its usecase, so that usecase's own eventual
+// publisher.Publish* call — which already receives that same ctx — picks
+// it back up transparently through kafkax.Publish, with no per-call-site
+// plumbing needed anywhere in between.
+func WithTraceparent(ctx context.Context, traceparent string) context.Context {
+	return context.WithValue(ctx, keyTraceparent, traceparent)
+}
+
+func Traceparent(ctx context.Context) string {
+	v, _ := ctx.Value(keyTraceparent).(string)
 	return v
 }
 

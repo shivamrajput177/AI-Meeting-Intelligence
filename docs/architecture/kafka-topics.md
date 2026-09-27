@@ -206,8 +206,14 @@ sequenceDiagram
   transient errors (Ollama timeout, MinIO hiccup); on exhaustion, publish to
   the topic's `.dlq` with the original headers + `x-error-reason`, `x-retry-count`.
 - **Trace propagation**: `traceparent` (W3C) set as a Kafka message header at
-  produce time (from the OTel context), extracted by the consumer to
-  continue the same distributed trace across the async boundary.
+  produce time, extracted by the consumer to continue the same distributed
+  trace across the async boundary. Implemented starting Phase 2.7
+  (`shared/kafkax`) by hand-generating/parsing this exact header format
+  directly, without the OTel SDK — there's no Collector/Tempo backend yet
+  to send real spans to (that's Phase 6), so this is correlated structured
+  logging today, not a real trace tree. Adopting the OTel SDK later needs
+  no producer/consumer changes: the wire format doesn't change, only what
+  sits behind the header (a real span instead of a hand-built string).
 - **Ordering**: partitioning by `meeting_id` guarantees the meeting's own
   event sequence (`uploaded → transcribed → summarized → extracted`) is
   processed in order *for that meeting*, while different meetings parallelize
