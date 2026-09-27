@@ -11,11 +11,16 @@ package entity
 
 import "time"
 
-// Status values. Phase 1 only ever produces "uploaded" — the rest of the
-// pipeline (transcribing -> ... -> completed) doesn't exist until
-// Phase 2's Kafka-driven services land. See PATCH /meetings/{id}/status
-// for the manual override docs/ROADMAP.md Phase 1 calls "a debug
-// endpoint," used to simulate the pipeline advancing before it's real.
+// Status values. Since Phase 2.6, consumer.go's statusConsumers drive
+// "uploaded" -> "transcribed" -> "summarized" -> "completed" (or
+// "failed" from any stage) off transcription/summary/action-item
+// completion and failure events — see that file's own doc comment for
+// why "transcribing"/"summarizing" specifically are not currently set by
+// anything (no service publishes a "just started" event for either
+// stage, only completion/failure). PATCH /meetings/{id}/status remains
+// available as a manual override on top of that — the Phase 1 "debug
+// endpoint" docs/ROADMAP.md describes, still useful for testing/demoing
+// without running the real pipeline.
 const (
 	StatusUploaded     = "uploaded"
 	StatusTranscribing = "transcribing"
@@ -138,4 +143,19 @@ type MeetingUploadedEvent struct {
 	Title              string `json:"title"`
 	SourceType         string `json:"sourceType"`
 	RecordingObjectKey string `json:"recordingObjectKey"`
+}
+
+// MeetingStatusChangedEvent is meeting.status-changed.v1's payload (see
+// docs/architecture/kafka-topics.md) — published by
+// UpdateStatusUseCase.UpdateStatus every time it actually changes a
+// meeting's status, whether that call came from consumer.go's
+// Kafka-driven status machine (Phase 2.6) or the manual PATCH
+// /meetings/{id}/status debug endpoint. No consumer exists yet
+// (Analytics and Notification, per the topic catalog, are Phase 3/4) —
+// published anyway, same precedent as ai-summary-service's
+// chunk.created.v1.
+type MeetingStatusChangedEvent struct {
+	MeetingID string `json:"meetingId"`
+	OrgID     string `json:"orgId"`
+	Status    string `json:"status"`
 }

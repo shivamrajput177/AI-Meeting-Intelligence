@@ -190,8 +190,10 @@ meeting.status_history(id BIGSERIAL PK, meeting_id UUID, status TEXT,
 
 **Kafka produced**: `meeting.uploaded.v1` (key: `meeting_id`),
 `meeting.status-changed.v1`, `meeting.deleted.v1`.
-**Kafka consumed**: `transcription.completed.v1`, `summary.completed.v1`,
-`action-item.extraction-completed.v1` (to advance the status machine).
+**Kafka consumed**: `transcription.completed.v1`, `transcription.failed.v1`,
+`summary.completed.v1`, `summary.failed.v1`, `action-item.extracted.v1`,
+`action-item.extraction-failed.v1` (each maps directly to a status
+transition — see services/meeting-service/consumer.go's statusConsumers).
 
 **Scaling**: stateless, 2-3 replicas, HPA on CPU; upload traffic is
 bursty — presigned-URL pattern means large file bytes bypass the service

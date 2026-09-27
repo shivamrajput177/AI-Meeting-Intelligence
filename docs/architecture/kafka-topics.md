@@ -65,9 +65,9 @@ Phase 2 needed it.
 | `chunk.created.v1` | AI Summary Service | Search Service | `meeting_id` | 12 | 30d | Chunk batch ready to embed |
 | `embedding.completed.v1` | Search Service | Analytics | `meeting_id` | 12 | 7d | Vectors indexed |
 | `summary.completed.v1` | AI Summary Service | Meeting Service, Action Item, Notification, Analytics | `meeting_id` | 12 | 30d | Summary ready |
-| `summary.failed.v1` | AI Summary Service | Notification | `meeting_id` | 12 | 7d | LLM failure |
+| `summary.failed.v1` | AI Summary Service | Notification, Meeting Service | `meeting_id` | 12 | 7d | LLM failure |
 | `action-item.extracted.v1` | Action Item Service | Meeting Service, Notification, Analytics | `meeting_id` | 12 | 30d | Batch of items extracted |
-| `action-item.extraction-failed.v1` | Action Item Service | Notification | `meeting_id` | 12 | 7d | Extraction failure |
+| `action-item.extraction-failed.v1` | Action Item Service | Notification, Meeting Service | `meeting_id` | 12 | 7d | Extraction failure |
 | `action-item.status-changed.v1` | Action Item Service | Analytics, Notification | `action_item_id` | 6 | 30d | Owner marks done/in-progress |
 | `action-item.jira-requested.v1` | Action Item Service (via gateway) | Notification Service | `action_item_id` | 6 | 7d | User asked to file a Jira ticket |
 | `action-item.reminder-due.v1` | Notification Service (scheduler) | Notification Service (dispatcher) | `action_item_id` | 6 | 1d | Reminder fired |

@@ -21,6 +21,7 @@ import (
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/config"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/dbx"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/httpserver"
+	"github.com/shivamrajput177/ai-meeting-intelligence/shared/kafkax"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/logger"
 )
 
@@ -56,15 +57,27 @@ func main() {
 	defer func() { _ = publisher.Close() }()
 
 	repo := meetingpg.NewMeetingRepository(pool)
+	updateStatus := usecase.NewUpdateStatusUseCase(repo, publisher, log)
 	handler := NewHandler(
 		usecase.NewCreateUploadIntentUseCase(repo, storage),
 		usecase.NewConfirmUploadUseCase(repo, storage, publisher, log),
 		usecase.NewGetMeetingUseCase(repo),
 		usecase.NewListMeetingsUseCase(repo),
-		usecase.NewUpdateStatusUseCase(repo),
+		updateStatus,
 		usecase.NewDeleteMeetingUseCase(repo, storage),
 		usecase.NewGetParticipantsUseCase(repo),
 	)
+
+	// Kafka connects lazily (see shared/kafkax.NewReader's doc comment on
+	// the writer side) — a broker that's down at startup doesn't block the
+	// REST server from coming up; each consumeStatusEvent loop just
+	// retries its own fetch until one's reachable. One reader per topic
+	// (see statusConsumers), all under this service's own consumer group.
+	for _, c := range statusConsumers {
+		reader := kafkax.NewReader(cfg.KafkaBrokers, c.topic, "meeting-service")
+		defer func() { _ = reader.Close() }()
+		go consumeStatusEvent(ctx, reader, updateStatus, c.status, log)
+	}
 
 	srv := httpserver.New("meeting-service", log)
 	RegisterRoutes(srv.Mux, handler, cfg.InternalServiceToken)

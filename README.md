@@ -21,7 +21,7 @@ hand-written REST/JSON; there's no gRPC or protobuf codegen anywhere in
 this design (see `docs/architecture/microservices.md` §"Internal
 Communication" for why).
 
-## Status: Phase 1 (MVP) implemented, Phase 2.1–2.5 implemented
+## Status: Phase 1 (MVP) implemented, Phase 2.1–2.6 implemented
 
 Auth, User, Organization, and Meeting services, the API Gateway, and a
 React web app are built and running — signup, login, JWT refresh/rotation,
@@ -79,23 +79,37 @@ needed for those), persists the batch, and publishes
 updates, restricted to the item's own owner or an org owner/admin) are
 live behind the gateway.
 
-**Not live-verified in this sandbox, for 2.3, 2.4, or 2.5**: the egress
+Phase 2.6's status-machine wiring is in too: Meeting Service now consumes
+`transcription.completed.v1`/`transcription.failed.v1`,
+`summary.completed.v1`/`summary.failed.v1`, and
+`action-item.extracted.v1`/`action-item.extraction-failed.v1` — one
+generic consumer loop (`consumer.go`'s `statusConsumers` table) maps each
+straight to a status transition
+(`transcribed`/`summarized`/`completed`, or `failed` from any stage) —
+and publishes `meeting.status-changed.v1` every time a meeting's status
+actually changes, whether that came from one of these events or the
+Phase 1 manual `PATCH /meetings/{id}/status` debug endpoint (still
+available, still owner-only). Honest gap: `transcribing`/`summarizing`
+specifically are never set by anything, since no service publishes a
+"just started" event for either stage — only completion/failure — so a
+meeting currently jumps straight from `uploaded` to `transcribed` with
+nothing in between.
+
+**Not live-verified in this sandbox, for 2.3 through 2.6**: the egress
 proxy here blocks all container-registry traffic, so the Kafka broker, a
 real whisper.cpp server, and a real Ollama server have never actually
-been run — the business logic (including the chunking and owner-matching
-algorithms) is verified by unit test with fakes, and each service's
-REST+Postgres read path is verified against a seeded row; the
+been run — the business logic (including the chunking, owner-matching,
+and status-mapping) is verified by unit test with fakes, and each
+service's REST+Postgres read path is verified against a seeded row; the
 docker-compose config itself is unverified past `docker compose config`
 syntax validation. See `docs/architecture/database-schema.md`'s
 "Row-Level Security pattern" section for a related, now-fixed finding:
 every repository query in this project filters by `org_id` explicitly
 rather than relying on Postgres RLS, which turned out to be silently
 inert (every service connects as the table owner/superuser, which RLS
-never applies to). Phase 2 onward remains ahead: wiring Meeting Service's
-own status field to advance off these Kafka events instead of only its
-Phase 1 manual debug endpoint (2.6), basic observability (2.7), and
-giving each service's DB connection its own non-superuser role so RLS
-becomes real defense-in-depth again.
+never applies to). Phase 2 onward remains ahead: basic observability
+(2.7), and giving each service's DB connection its own non-superuser
+role so RLS becomes real defense-in-depth again.
 
 The backend is a **Go workspace** (`go.work` at the repo root): `shared/`
 is its own Go module with no `internal/` in its path, so every

@@ -13,4 +13,5 @@ import (
 
 type Publisher interface {
 	PublishMeetingUploaded(ctx context.Context, event entity.MeetingUploadedEvent) error
+	PublishMeetingStatusChanged(ctx context.Context, event entity.MeetingStatusChangedEvent) error
 }
