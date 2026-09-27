@@ -16,10 +16,11 @@ import (
 type Handler struct {
 	getSummary        *usecase.GetSummaryUseCase
 	processTranscript *usecase.ProcessTranscriptUseCase
+	getChunks         *usecase.GetChunksUseCase
 }
 
-func NewHandler(getSummary *usecase.GetSummaryUseCase, processTranscript *usecase.ProcessTranscriptUseCase) *Handler {
-	return &Handler{getSummary: getSummary, processTranscript: processTranscript}
+func NewHandler(getSummary *usecase.GetSummaryUseCase, processTranscript *usecase.ProcessTranscriptUseCase, getChunks *usecase.GetChunksUseCase) *Handler {
+	return &Handler{getSummary: getSummary, processTranscript: processTranscript, getChunks: getChunks}
 }
 
 func toSummaryResponse(s *entity.Summary) entity.SummaryResponse {
@@ -73,5 +74,30 @@ func (h *Handler) RegenerateSummary(w http.ResponseWriter, r *http.Request) erro
 		return err
 	}
 	httpserver.JSON(w, http.StatusOK, toSummaryResponse(summary))
+	return nil
+}
+
+// GetChunksInternal serves GET /internal/meetings/{id}/chunks — Search
+// Service's own read (Phase 3.2) for the chunk text its embedding
+// pipeline needs, which chunk.created.v1 deliberately doesn't carry (see
+// entity.ChunkCreatedEvent's doc comment). Same "internal caller states
+// its own org_id" pattern as GetSummaryInternal above.
+func (h *Handler) GetChunksInternal(w http.ResponseWriter, r *http.Request) error {
+	orgID := r.URL.Query().Get("orgId")
+	if orgID == "" {
+		return apperr.BadRequest("orgId query parameter is required")
+	}
+	chunks, err := h.getChunks.GetChunks(r.Context(), orgID, r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	resp := make([]entity.ChunkResponse, len(chunks))
+	for i, c := range chunks {
+		resp[i] = entity.ChunkResponse{
+			ID: c.ID, MeetingID: c.MeetingID, ChunkIndex: c.ChunkIndex,
+			Text: c.Text, TokenCount: c.TokenCount, StartMs: c.StartMS, EndMs: c.EndMS,
+		}
+	}
+	httpserver.JSON(w, http.StatusOK, resp)
 	return nil
 }

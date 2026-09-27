@@ -165,6 +165,60 @@ func (h *Handler) GetParticipantsInternal(w http.ResponseWriter, r *http.Request
 	return nil
 }
 
+// GetMeetingInternal is the same read as GetMeeting, reachable at
+// /internal/meetings/{id} instead — this is what Search Service (Phase
+// 3.3/3.4) calls to resolve a meeting's title for a search result or RAG
+// citation. Same "internal caller states its own org_id" pattern as
+// GetParticipantsInternal above.
+func (h *Handler) GetMeetingInternal(w http.ResponseWriter, r *http.Request) error {
+	orgID := r.URL.Query().Get("orgId")
+	if orgID == "" {
+		return apperr.BadRequest("orgId query parameter is required")
+	}
+	meeting, err := h.getMeeting.GetMeeting(r.Context(), orgID, r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	httpserver.JSON(w, http.StatusOK, toMeetingResponse(meeting))
+	return nil
+}
+
+// ListMeetingsInternal is the same list as ListMeetings, reachable at
+// /internal/meetings instead — this is what Search Service's
+// POST /search/reindex (full-org backfill) calls to enumerate every
+// meeting an org has, since it runs as a service-to-service call with no
+// user JWT to read a page/org from. pageSize is capped at
+// ListMeetingsUseCase's own max (100) same as the public route; a org
+// with more meetings than that needs more than one reindex page today —
+// an acceptable dev-scale limit, not a design Search Service's caller
+// needs to reason about differently than any other paginated list here.
+func (h *Handler) ListMeetingsInternal(w http.ResponseWriter, r *http.Request) error {
+	orgID := r.URL.Query().Get("orgId")
+	if orgID == "" {
+		return apperr.BadRequest("orgId query parameter is required")
+	}
+	q := r.URL.Query()
+	page, _ := strconv.Atoi(q.Get("page"))
+	if page == 0 {
+		page = 1
+	}
+	pageSize, _ := strconv.Atoi(q.Get("pageSize"))
+	if pageSize == 0 {
+		pageSize = 100
+	}
+
+	items, total, err := h.listMeetings.ListMeetings(r.Context(), orgID, entity.ListFilter{Page: page, PageSize: pageSize})
+	if err != nil {
+		return err
+	}
+	resp := entity.ListMeetingsResponse{Page: page, PageSize: pageSize, Total: total}
+	for _, m := range items {
+		resp.Data = append(resp.Data, toMeetingResponse(m))
+	}
+	httpserver.JSON(w, http.StatusOK, resp)
+	return nil
+}
+
 func (h *Handler) DeleteMeeting(w http.ResponseWriter, r *http.Request) error {
 	if err := h.deleteMeeting.DeleteMeeting(r.Context(), reqctx.OrgID(r.Context()), r.PathValue("id")); err != nil {
 		return err

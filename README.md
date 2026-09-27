@@ -21,7 +21,7 @@ hand-written REST/JSON; there's no gRPC or protobuf codegen anywhere in
 this design (see `docs/architecture/microservices.md` §"Internal
 Communication" for why).
 
-## Status: Phase 1 (MVP) implemented, Phase 2 (2.1–2.7) fully implemented
+## Status: Phase 1 (MVP) implemented, Phase 2 (2.1–2.7) fully implemented, Phase 3.1–3.4 implemented
 
 Auth, User, Organization, and Meeting services, the API Gateway, and a
 React web app are built and running — signup, login, JWT refresh/rotation,
@@ -118,23 +118,59 @@ propagation chain yet — that's full request/async instrumentation
 end-to-end, which is Phase 6's job once OTel's actual SDK is in the
 picture.
 
-**Not live-verified in this sandbox, for 2.3 through 2.7**: the egress
+Phase 3.1 through 3.4 (Search & RAG) are in as well, as a new Search
+Service: it consumes `chunk.created.v1`, fetches each chunk's text from
+AI Summary Service's new internal endpoint (`GET
+/internal/meetings/{id}/chunks`), embeds it via a real Ollama server
+running `nomic-embed-text` (768 dimensions), and stores the vectors in
+`pgvector` (already available from Phase 1 — see the `postgres` service's
+own comment in `docker-compose.yaml`), publishing
+`embedding.completed.v1`/`embedding.failed.v1`. `GET /search?q=` and
+`POST /qa/ask` both embed the query the same way and rank
+`search.chunk_embeddings` by cosine distance (`<=>`); `GET
+/meetings/{id}/similar` averages a meeting's own chunk embeddings into a
+centroid (in Go, not a SQL `avg(vector)` — see
+`SimilarMeetingsUseCase`'s doc comment for why) and ranks every other
+meeting in the org by its closest-matching chunk to that centroid.
+`POST /qa/ask` assembles a grounded prompt with `[meeting_title,
+timestamp]` citations from the retrieved chunks (meeting titles resolved
+via Meeting Service's own new internal endpoints, `GET
+/internal/meetings/{id}` and `GET /internal/meetings`), calls Ollama for
+the answer, and persists the exchange to `GET /qa/history`. `POST
+/search/reindex` (owner/admin-only) re-embeds every meeting in the org on
+demand — best-effort per meeting, so one meeting with nothing to embed
+yet doesn't abort the whole backfill.
+
+Two honest simplifications, stated plainly rather than glossed over:
+every retrieved chunk is treated as "cited" in an answer (no
+function-calling or citation-marker parsing to narrow that down to only
+the chunks the model actually drew on), and `POST /search/reindex`
+enumerates at most one page of meetings (100, Meeting Service's own
+`ListMeetingsUseCase` page-size cap) — an org with more than that needs
+more than one reindex call today.
+
+**Not live-verified in this sandbox, for 2.3 through 3.4**: the egress
 proxy here blocks all container-registry traffic, so the Kafka broker, a
 real whisper.cpp server, and a real Ollama server have never actually
 been run — the business logic (including the chunking, owner-matching,
-status-mapping, and trace propagation) is verified by unit test with
-fakes, and each service's REST+Postgres read path is verified against a
-seeded row; the docker-compose config itself is unverified past
-`docker compose config` syntax validation. See
+status-mapping, trace propagation, and centroid/citation logic) is
+verified by unit test with fakes, and each service's REST+Postgres read
+path is verified against a seeded row; the docker-compose config itself
+is unverified past `docker compose config` syntax validation. `pgvector`
+specifically has an extra unverified edge: which minor version the
+`pgvector/pgvector:pg16` image bundles has never been confirmed against a
+running instance, which is exactly why `SimilarMeetingsUseCase` computes
+its centroid in Go rather than relying on a SQL vector aggregate that
+only exists in pgvector >= 0.5. See
 `docs/architecture/database-schema.md`'s "Row-Level Security pattern"
 section for a related, now-fixed finding: every repository query in this
 project filters by `org_id` explicitly rather than relying on Postgres
 RLS, which turned out to be silently inert (every service connects as
-the table owner/superuser, which RLS never applies to). **Phase 2 is
-now fully implemented** — Phase 3 (Search & RAG) is next; giving each
-service's DB connection its own non-superuser role so RLS becomes real
-defense-in-depth again remains an open follow-up, not tied to any one
-phase.
+the table owner/superuser, which RLS never applies to). **Phase 2 and
+3.1–3.4 are now fully implemented** — Phase 3.5 (Analytics Service) is
+next; giving each service's DB connection its own non-superuser role so
+RLS becomes real defense-in-depth again remains an open follow-up, not
+tied to any one phase.
 
 The backend is a **Go workspace** (`go.work` at the repo root): `shared/`
 is its own Go module with no `internal/` in its path, so every
@@ -154,18 +190,19 @@ make up
 (equivalent to `docker compose -f deployments/docker-compose.yaml up --build`)
 
 This starts Postgres (with `pgvector` pre-installed for Phase 3), Redis,
-MinIO, Kafka, Ollama, whisper.cpp, all eight backend services, and the web
+MinIO, Kafka, Ollama, whisper.cpp, all nine backend services, and the web
 app — including two one-shot init steps that make this a genuine
 single-command bring-up: `whisper-model-init` downloads whisper.cpp's
 `ggml-base.en.bin` (~140MB) into `deployments/whisper-models/` before
-`whisper` starts, and `ollama-model-init` runs `ollama pull qwen2.5:7b`
-against the `ollama` container before `ai-summary-service` **and**
-`action-item-service` start (both call the same model). Both init steps
-are idempotent — safe to leave in place on every `make up`, and a no-op
-once the model's already there. Expect the *first* `make up` to take a
-while (a few GB for the Ollama model, proportional to your connection);
-every run after that is fast, since Docker volumes keep both models
-around. Each service also applies its own schema's migrations
+`whisper` starts, and `ollama-model-init` pulls every model this stack's
+services call against Ollama — `qwen2.5:7b` (AI Summary Service, Action
+Item Service, and Search Service's RAG answering) and `nomic-embed-text`
+(Search Service's embedding pipeline) — before those services start. Both
+init steps are idempotent — safe to leave in place on every `make up`,
+and a no-op once a model's already there. Expect the *first* `make up` to
+take a while (a few GB total across both Ollama models, proportional to
+your connection); every run after that is fast, since Docker volumes keep
+every model around. Each service also applies its own schema's migrations
 automatically on startup — nothing to run by hand.
 
 **Apple Silicon note**: `ghcr.io/ggml-org/whisper.cpp` publishes no
@@ -173,11 +210,12 @@ automatically on startup — nothing to run by hand.
 and runs under Rosetta emulation — CPU transcription will be noticeably
 slower than on native x86_64, but `make up` itself will complete.
 
-**If you don't need the AI pipeline** (transcript/summary/action-item
-endpoints) for what you're testing right now, it's still fine to skip
-`whisper`, `whisper-model-init`, `ollama`, `ollama-model-init`,
-`transcription-service`, `ai-summary-service`, and `action-item-service`
-entirely and start faster by naming only the services you want:
+**If you don't need the AI pipeline** (transcript/summary/action-item/
+search/RAG endpoints) for what you're testing right now, it's still fine
+to skip `whisper`, `whisper-model-init`, `ollama`, `ollama-model-init`,
+`transcription-service`, `ai-summary-service`, `action-item-service`, and
+`search-service` entirely and start faster by naming only the services
+you want:
 ```bash
 docker compose -f deployments/docker-compose.yaml up --build \
   postgres redis minio kafka kafka-init \
@@ -185,7 +223,7 @@ docker compose -f deployments/docker-compose.yaml up --build \
   api-gateway web
 ```
 That covers every Auth/Users/Organizations/Meetings endpoint in the API
-Reference below — just not Transcript/Summary/Action Items. Then:
+Reference below — just not Transcript/Summary/Action Items/Search. Then:
 
 - **Web app**: http://localhost:5173 — sign up, log in, upload a
   recording, watch it show up in your meeting list.
@@ -504,6 +542,50 @@ curl -X PATCH {{base_url}}/action-items/{{action_item_id}} \
   -d '{"status": "in_progress"}'
 ```
 
+#### Search & RAG (bearer token required, Phase 3.1–3.4)
+
+Like Transcript/Summary/Action Items above, these only return real
+results once `chunk.created.v1` has actually been consumed by Search
+Service for at least one meeting — not the case in this sandbox (see the
+Status section above); against a real `docker compose up`, they work
+once at least one meeting has been summarized (summarization is what
+produces the chunks Search Service embeds).
+
+**Semantic search across the org's meetings**:
+```bash
+curl "{{base_url}}/search?q=what%20did%20we%20decide%20about%20the%20launch" \
+  -H "Authorization: Bearer {{access_token}}"
+```
+
+**Find meetings similar to one you're looking at**:
+```bash
+curl {{base_url}}/meetings/{{meeting_id}}/similar \
+  -H "Authorization: Bearer {{access_token}}"
+```
+
+**Ask a question over meeting history (RAG)** — retrieves the most
+relevant chunks, asks Ollama to answer grounded in them, and returns
+citations back to the source meeting/timestamp:
+```bash
+curl -X POST {{base_url}}/qa/ask \
+  -H "Authorization: Bearer {{access_token}}" \
+  -H "Content-Type: application/json" \
+  -d '{"question": "What did we decide about the launch date?"}'
+```
+
+**Your past questions and answers**:
+```bash
+curl {{base_url}}/qa/history \
+  -H "Authorization: Bearer {{access_token}}"
+```
+
+**Re-embed every meeting in the org** — owner/admin-only, best-effort per
+meeting (see the Status section's note on its one-page-of-100 limit):
+```bash
+curl -X POST {{base_url}}/search/reindex \
+  -H "Authorization: Bearer {{access_token}}"
+```
+
 #### Internal service-to-service APIs (debugging only — not through the gateway)
 
 These are called by other services, never by a client, and aren't
@@ -545,6 +627,18 @@ curl "http://localhost:8085/internal/meetings/{{meeting_id}}/summary?orgId={{org
 
 # Meeting Service — used by Action Item Service for best-guess owner matching
 curl "http://localhost:8083/internal/meetings/{{meeting_id}}/participants?orgId={{org_id}}" \
+  -H "X-Internal-Token: dev-internal-token"
+
+# AI Summary Service — used by Search Service's embedding pipeline to fetch chunk text
+curl "http://localhost:8085/internal/meetings/{{meeting_id}}/chunks?orgId={{org_id}}" \
+  -H "X-Internal-Token: dev-internal-token"
+
+# Meeting Service — used by Search Service to resolve a meeting title for a citation
+curl "http://localhost:8083/internal/meetings/{{meeting_id}}?orgId={{org_id}}" \
+  -H "X-Internal-Token: dev-internal-token"
+
+# Meeting Service — used by Search Service's POST /search/reindex to enumerate an org's meetings
+curl "http://localhost:8083/internal/meetings?orgId={{org_id}}" \
   -H "X-Internal-Token: dev-internal-token"
 ```
 

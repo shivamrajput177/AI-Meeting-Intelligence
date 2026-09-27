@@ -1,16 +1,17 @@
 #!/bin/bash
 # create-topics.sh runs once per `docker compose up` (the kafka-init
-# service's whole job) to create every topic Phase 2's services produce —
-# see docs/architecture/kafka-topics.md for the full catalog, naming
-# convention, and partition-key/retention rationale this mirrors exactly.
+# service's whole job) to create every topic each landed phase's services
+# produce — see docs/architecture/kafka-topics.md for the full catalog,
+# naming convention, and partition-key/retention rationale this mirrors
+# exactly.
 #
-# Scope: only topics *produced* by a Phase 2 service (Meeting,
-# Transcription, AI Summary, Action Item — see docs/ROADMAP.md Phase 2)
-# are created here. The catalog also documents topics owned by later
-# phases' services (Search, Notification, Analytics, and Auth/User/Org's
-# own event stream) — those get created here once the phase that builds
-# their producer lands, the same way this file itself didn't exist until
-# Phase 2 needed it.
+# Scope: only topics *produced* by a landed phase's service (Meeting,
+# Transcription, AI Summary, Action Item — Phase 2; Search — Phase 3; see
+# docs/ROADMAP.md) are created here. The catalog also documents topics
+# owned by later phases' services (Notification, Analytics, and
+# Auth/User/Org's own event stream) — those get created here once the
+# phase that builds their producer lands, the same way this file itself
+# didn't exist until Phase 2 needed it.
 #
 # DLQ topics: per kafka-topics.md's own rule, only *.completed.v1,
 # *.extracted.v1, and *.status-changed.v1 topics get a .dlq companion —
@@ -49,5 +50,9 @@ create_topic action-item.extracted.v1.dlq         12 $((30 * DAY))
 create_topic action-item.extraction-failed.v1     12 $((7 * DAY))
 create_topic action-item.status-changed.v1         6 $((30 * DAY))
 create_topic action-item.status-changed.v1.dlq     6 $((30 * DAY))
+
+create_topic embedding.completed.v1               12 $((7 * DAY))
+create_topic embedding.completed.v1.dlq           12 $((7 * DAY))
+create_topic embedding.failed.v1                  12 $((7 * DAY))
 
 echo "kafka-init: topics created."

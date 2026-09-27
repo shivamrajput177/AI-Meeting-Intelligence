@@ -58,6 +58,19 @@ type SummaryResponse struct {
 	CreatedAt     string   `json:"createdAt"`
 }
 
+// ChunkResponse is what GET /internal/meetings/{id}/chunks returns — see
+// handler.GetChunksInternal's doc comment for who calls this and why it's
+// internal-only.
+type ChunkResponse struct {
+	ID         string `json:"id"`
+	MeetingID  string `json:"meetingId"`
+	ChunkIndex int    `json:"chunkIndex"`
+	Text       string `json:"text"`
+	TokenCount int    `json:"tokenCount"`
+	StartMs    int    `json:"startMs"`
+	EndMs      int    `json:"endMs"`
+}
+
 // --- Kafka payloads (see docs/architecture/kafka-topics.md) ---
 
 // TranscriptionCompletedEvent mirrors

@@ -1,0 +1,90 @@
+// consumer.go is Search Service's Kafka consumer loop — the Kafka
+// analogue of routes.go ("which topic maps to which usecase"), plus the
+// retry/failure-signal policy docs/architecture/kafka-topics.md's
+// "Delivery Semantics & Reliability" section documents: exponential
+// backoff for a fixed number of attempts, then give up and publish the
+// topic's own *.failed.v1 signal rather than blocking the partition
+// forever. chunk.created.v1 has no .dlq of its own here — per
+// kafka-topics.md's DLQ rule, embedding.failed.v1 already is that
+// signal, so there's nowhere else to route the original message.
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"time"
+
+	kafkago "github.com/segmentio/kafka-go"
+
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/search-service/entity"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/search-service/events"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/search-service/usecase"
+	"github.com/shivamrajput177/ai-meeting-intelligence/shared/kafkax"
+	"github.com/shivamrajput177/ai-meeting-intelligence/shared/logger"
+	"github.com/shivamrajput177/ai-meeting-intelligence/shared/reqctx"
+)
+
+// topicChunkCreated mirrors aisummarysvc/events/kafka's
+// TopicChunkCreated — duplicated, not imported, matching every other
+// cross-service constant in this repo (services never import each
+// other's Go packages).
+const topicChunkCreated = "chunk.created.v1"
+
+const maxAttempts = 3
+
+// ConsumeChunkCreated runs until ctx is cancelled, fetching each
+// chunk.created.v1 message in turn and committing its offset only after
+// it's been handled — successfully, or by publishing embedding.failed.v1
+// once retries are exhausted — never on a still-retryable error, so a
+// process crash mid-retry picks the same message back up on restart
+// instead of silently losing it.
+func ConsumeChunkCreated(ctx context.Context, reader *kafkago.Reader, embedChunks *usecase.EmbedChunksUseCase, publisher events.Publisher, log *logger.Logger) {
+	for {
+		msg, err := reader.FetchMessage(ctx)
+		if err != nil {
+			if ctx.Err() != nil {
+				return // shutting down
+			}
+			log.Error("fetch chunk.created.v1", "err", err)
+			time.Sleep(time.Second)
+			continue
+		}
+
+		var event entity.ChunkCreatedEvent
+		if err := json.Unmarshal(msg.Value, &event); err != nil {
+			log.Error("decode chunk.created.v1", "err", err)
+			_ = reader.CommitMessages(ctx, msg) // will never parse on retry either — commit and move on
+			continue
+		}
+
+		// See shared/kafkax's doc comment on HeaderTraceparent: msgCtx (not
+		// ctx) carries this message's trace forward into both the usecase
+		// call and whatever it publishes — ctx itself stays the loop's own
+		// long-lived context, used only for FetchMessage/CommitMessages.
+		traceparent := kafkax.ChildTraceparent(kafkax.TraceparentFromHeaders(msg.Headers))
+		msgCtx := reqctx.WithTraceparent(ctx, traceparent)
+		traceID := kafkax.TraceIDOf(traceparent)
+
+		var procErr error
+		for attempt := 1; attempt <= maxAttempts; attempt++ {
+			if _, procErr = embedChunks.EmbedChunks(msgCtx, event.OrgID, event.MeetingID); procErr == nil {
+				break
+			}
+			log.Error("process chunk.created.v1", "meeting_id", event.MeetingID, "trace_id", traceID, "attempt", attempt, "err", procErr)
+			if attempt < maxAttempts {
+				time.Sleep(time.Duration(attempt) * 2 * time.Second)
+			}
+		}
+		if procErr != nil {
+			if err := publisher.PublishEmbeddingFailed(msgCtx, entity.EmbeddingFailedEvent{
+				MeetingID: event.MeetingID, OrgID: event.OrgID, Reason: procErr.Error(),
+			}); err != nil {
+				log.Error("publish embedding.failed.v1", "meeting_id", event.MeetingID, "trace_id", traceID, "err", err)
+			}
+		}
+
+		if err := reader.CommitMessages(ctx, msg); err != nil {
+			log.Error("commit chunk.created.v1 offset", "meeting_id", event.MeetingID, "err", err)
+		}
+	}
+}

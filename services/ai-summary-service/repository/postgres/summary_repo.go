@@ -116,3 +116,27 @@ func (r *SummaryRepository) ReplaceChunks(ctx context.Context, orgID, meetingID 
 		return nil
 	})
 }
+
+func (r *SummaryRepository) GetChunksByMeetingID(ctx context.Context, orgID, meetingID string) ([]*entity.Chunk, error) {
+	var chunks []*entity.Chunk
+	err := dbx.WithTenantTx(ctx, r.pool, orgID, func(ctx context.Context, tx pgx.Tx) error {
+		rows, err := tx.Query(ctx,
+			`SELECT id, meeting_id, org_id, chunk_index, text, token_count, start_ms, end_ms
+			 FROM ai.chunks WHERE meeting_id = $1 AND org_id = $2 ORDER BY chunk_index`,
+			meetingID, orgID,
+		)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var c entity.Chunk
+			if err := rows.Scan(&c.ID, &c.MeetingID, &c.OrgID, &c.ChunkIndex, &c.Text, &c.TokenCount, &c.StartMS, &c.EndMS); err != nil {
+				return err
+			}
+			chunks = append(chunks, &c)
+		}
+		return rows.Err()
+	})
+	return chunks, err
+}

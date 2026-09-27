@@ -68,6 +68,12 @@ func (f *fakeRepository) ReplaceChunks(_ context.Context, _, _ string, chunks []
 	return nil
 }
 
+func (f *fakeRepository) GetChunksByMeetingID(_ context.Context, _, _ string) ([]*entity.Chunk, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.chunks, nil
+}
+
 type fakePublisher struct {
 	mu               sync.Mutex
 	chunkCreated     []entity.ChunkCreatedEvent

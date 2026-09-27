@@ -29,25 +29,25 @@ would enforce, just without the extra moving part.
   if retention isn't enough (documented as a Phase 6 stretch: log-compacted
   `meeting.snapshot.v1`).
 
-## Local dev infra (Phase 2)
+## Local dev infra (Phase 2+)
 
 `deployments/docker-compose.yaml`'s `kafka` service is a single-node,
 single-process KRaft broker (`apache/kafka:3.8.0`) — the local stand-in
 for the 3-broker Strimzi-managed cluster `kubernetes-cicd.md` documents
 for Phase 5. A one-shot `kafka-init` service runs
 `deployments/kafka-init/create-topics.sh` on every `docker compose up`
-(idempotent — `--if-not-exists`) to create the topics Phase 2's services
-actually produce: `meeting.uploaded.v1`/`meeting.status-changed.v1`/
+(idempotent — `--if-not-exists`) to create the topics each landed phase's
+services actually produce: `meeting.uploaded.v1`/`meeting.status-changed.v1`/
 `meeting.deleted.v1` (Meeting Service), `transcription.completed.v1`/
 `transcription.failed.v1` (Transcription Service),
 `chunk.created.v1`/`summary.completed.v1`/`summary.failed.v1` (AI Summary
-Service), and `action-item.extracted.v1`/`action-item.extraction-failed.v1`/
+Service), `action-item.extracted.v1`/`action-item.extraction-failed.v1`/
 `action-item.status-changed.v1` (Action Item Service) — the four services
-docs/ROADMAP.md's Phase 2 builds. The rest of the catalog below is created
-once the phase that
-builds its producer (Auth/User/Org's own events, Search, Notification,
-Analytics) lands, the same way this script itself didn't exist before
-Phase 2 needed it.
+docs/ROADMAP.md's Phase 2 builds — and, since Phase 3.2,
+`embedding.completed.v1`/`embedding.failed.v1` (Search Service). The rest
+of the catalog below is created once the phase that builds its producer
+(Auth/User/Org's own events, Notification, Analytics) lands, the same way
+this script itself didn't exist before Phase 2 needed it.
 
 ## Topic Catalog
 
@@ -64,6 +64,7 @@ Phase 2 needed it.
 | `transcription.failed.v1` | Transcription Service | Notification, Meeting Service | `meeting_id` | 12 | 7d | ASR failure |
 | `chunk.created.v1` | AI Summary Service | Search Service | `meeting_id` | 12 | 30d | Chunk batch ready to embed |
 | `embedding.completed.v1` | Search Service | Analytics | `meeting_id` | 12 | 7d | Vectors indexed |
+| `embedding.failed.v1` | Search Service | Notification | `meeting_id` | 12 | 7d | Embedding failure |
 | `summary.completed.v1` | AI Summary Service | Meeting Service, Action Item, Notification, Analytics | `meeting_id` | 12 | 30d | Summary ready |
 | `summary.failed.v1` | AI Summary Service | Notification, Meeting Service | `meeting_id` | 12 | 7d | LLM failure |
 | `action-item.extracted.v1` | Action Item Service | Meeting Service, Notification, Analytics | `meeting_id` | 12 | 30d | Batch of items extracted |

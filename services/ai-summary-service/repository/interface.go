@@ -26,4 +26,9 @@ type Repository interface {
 	// inserting the new set — a regenerate run shouldn't leave stale
 	// chunks from a previous pass lingering alongside the fresh ones.
 	ReplaceChunks(ctx context.Context, orgID, meetingID string, chunks []*entity.Chunk) error
+
+	// GetChunksByMeetingID serves Search Service's internal read (see
+	// GetChunksInternal) — its embedding pipeline needs the chunk text
+	// chunk.created.v1 deliberately doesn't carry.
+	GetChunksByMeetingID(ctx context.Context, orgID, meetingID string) ([]*entity.Chunk, error)
 }

@@ -30,4 +30,8 @@ func RegisterRoutes(mux *http.ServeMux, h *Handler, internalToken string) {
 
 	mux.Handle("GET /internal/meetings/{id}/participants",
 		middleware.RequireInternalToken(internalToken, httpserver.H(h.GetParticipantsInternal)))
+	mux.Handle("GET /internal/meetings/{id}",
+		middleware.RequireInternalToken(internalToken, httpserver.H(h.GetMeetingInternal)))
+	mux.Handle("GET /internal/meetings",
+		middleware.RequireInternalToken(internalToken, httpserver.H(h.ListMeetingsInternal)))
 }

@@ -23,6 +23,7 @@ type ServiceURLs struct {
 	Transcription string
 	AISummary     string
 	ActionItem    string
+	Search        string
 }
 
 // Register mounts every /api/v1/... route documented in
@@ -104,4 +105,10 @@ func Register(mux *http.ServeMux, urls ServiceURLs, jwtSecret []byte, rdb *redis
 	// re-checked inside action-item-service itself (see its
 	// UpdateActionItemUseCase).
 	protect("/api/v1/action-items/{id}", urls.ActionItem)
+
+	protect("/api/v1/search", urls.Search)
+	protect("/api/v1/meetings/{id}/similar", urls.Search)
+	protect("/api/v1/qa/ask", urls.Search)
+	protect("/api/v1/qa/history", urls.Search)
+	protectRole("POST /api/v1/search/reindex", urls.Search, "owner", "admin")
 }

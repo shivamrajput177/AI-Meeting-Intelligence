@@ -8,6 +8,7 @@ use (
 	./services/auth-service
 	./services/meeting-service
 	./services/organization-service
+	./services/search-service
 	./services/transcription-service
 	./services/user-service
 )

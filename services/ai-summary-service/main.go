@@ -59,7 +59,7 @@ func main() {
 	processTranscript := usecase.NewProcessTranscriptUseCase(
 		transcriptClient, summarizer, repo, publisher, log, cfg.OllamaModel, ollama.PromptVersion(),
 	)
-	handler := NewHandler(usecase.NewGetSummaryUseCase(repo), processTranscript)
+	handler := NewHandler(usecase.NewGetSummaryUseCase(repo), processTranscript, usecase.NewGetChunksUseCase(repo))
 
 	// Kafka connects lazily (see shared/kafkax.NewReader's doc comment on
 	// the writer side) — a broker that's down at startup doesn't block

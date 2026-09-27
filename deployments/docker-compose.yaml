@@ -194,20 +194,26 @@ services:
       retries: 15
 
   ollama-model-init:
-    # Pulls the LLM AI Summary Service calls (see
-    # deployments/configs/docker/ai-summary-service.json's ollama_model)
-    # into the ollama container's model store on first `docker compose
-    # up` — `ollama pull` is itself idempotent (a no-op if already
-    # pulled), so this runs safely on every startup, same as
-    # whisper-model-init's own once-then-skip behavior but implemented
-    # via Ollama's own client instead of a manual file check. A 7B
-    # Q4_K_M model is several GB; expect this step to take a while the
-    # first time, proportional to your connection speed, not a hang.
+    # Pulls every model this stack's services call against Ollama (see
+    # deployments/configs/docker/ai-summary-service.json's ollama_model
+    # and deployments/configs/docker/search-service.json's
+    # ollama_embed_model/ollama_chat_model) into the ollama container's
+    # model store on first `docker compose up` — `ollama pull` is itself
+    # idempotent (a no-op if already pulled), so this runs safely on
+    # every startup, same as whisper-model-init's own once-then-skip
+    # behavior but implemented via Ollama's own client instead of a
+    # manual file check. The 7B chat model is several GB; the embedding
+    # model is much smaller (a few hundred MB) — expect the combined
+    # first pull to take a while, proportional to your connection speed,
+    # not a hang.
     image: ollama/ollama:latest
     environment:
       OLLAMA_HOST: "http://ollama:11434"
-    entrypoint: ["ollama"]
-    command: ["pull", "qwen2.5:7b"]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        ollama pull qwen2.5:7b
+        ollama pull nomic-embed-text
     depends_on:
       ollama: { condition: service_healthy }
 
@@ -287,6 +293,20 @@ services:
       meeting-service: { condition: service_started }
       ai-summary-service: { condition: service_started }
 
+  search-service:
+    build: { context: .., dockerfile: deployments/Dockerfile, args: { SERVICE: search-service } }
+    volumes:
+      - "./configs/docker/search-service.json:/app/deployments/configs/search-service.json:ro"
+    ports: ["8087:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      kafka-init: { condition: service_completed_successfully }
+      ollama: { condition: service_healthy }
+      ollama-model-init: { condition: service_completed_successfully }
+      meeting-service: { condition: service_started }
+      ai-summary-service: { condition: service_started }
+
   api-gateway:
     build: { context: .., dockerfile: deployments/Dockerfile, args: { SERVICE: api-gateway } }
     volumes:
@@ -301,6 +321,7 @@ services:
       transcription-service: { condition: service_started }
       ai-summary-service: { condition: service_started }
       action-item-service: { condition: service_started }
+      search-service: { condition: service_started }
 
   web:
     # VITE_API_BASE_URL must be a build arg, not a runtime environment
