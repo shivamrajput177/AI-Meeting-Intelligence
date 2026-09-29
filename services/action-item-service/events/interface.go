@@ -15,4 +15,5 @@ import (
 type Publisher interface {
 	PublishActionItemExtracted(ctx context.Context, event entity.ActionItemExtractedEvent) error
 	PublishActionItemExtractionFailed(ctx context.Context, event entity.ActionItemExtractionFailedEvent) error
+	PublishActionItemStatusChanged(ctx context.Context, event entity.ActionItemStatusChangedEvent) error
 }

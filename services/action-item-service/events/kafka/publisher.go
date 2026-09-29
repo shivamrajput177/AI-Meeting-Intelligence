@@ -16,17 +16,20 @@ import (
 const (
 	TopicActionItemExtracted        = "action-item.extracted.v1"
 	TopicActionItemExtractionFailed = "action-item.extraction-failed.v1"
+	TopicActionItemStatusChanged    = "action-item.status-changed.v1"
 )
 
 type Publisher struct {
 	actionItemExtracted        *kafkago.Writer
 	actionItemExtractionFailed *kafkago.Writer
+	actionItemStatusChanged    *kafkago.Writer
 }
 
 func NewPublisher(brokers []string) *Publisher {
 	return &Publisher{
 		actionItemExtracted:        kafkax.NewWriter(brokers, TopicActionItemExtracted),
 		actionItemExtractionFailed: kafkax.NewWriter(brokers, TopicActionItemExtractionFailed),
+		actionItemStatusChanged:    kafkax.NewWriter(brokers, TopicActionItemStatusChanged),
 	}
 }
 
@@ -34,11 +37,17 @@ func (p *Publisher) Close() error {
 	if err := p.actionItemExtracted.Close(); err != nil {
 		return err
 	}
-	return p.actionItemExtractionFailed.Close()
+	if err := p.actionItemExtractionFailed.Close(); err != nil {
+		return err
+	}
+	return p.actionItemStatusChanged.Close()
 }
 
-// Every Publish* call below keys by meeting_id, per kafka-topics.md's
-// "per-meeting ordering matters" rule.
+// Every Publish* call below keys per kafka-topics.md's topic catalog:
+// meeting_id for extraction events ("per-meeting ordering matters"),
+// action_item_id for status-changed (that topic's own documented key,
+// since a single action item's own status transitions are what need to
+// stay ordered, not a whole meeting's).
 
 func (p *Publisher) PublishActionItemExtracted(ctx context.Context, event entity.ActionItemExtractedEvent) error {
 	return kafkax.Publish(ctx, p.actionItemExtracted, event.MeetingID, event)
@@ -46,4 +55,8 @@ func (p *Publisher) PublishActionItemExtracted(ctx context.Context, event entity
 
 func (p *Publisher) PublishActionItemExtractionFailed(ctx context.Context, event entity.ActionItemExtractionFailedEvent) error {
 	return kafkax.Publish(ctx, p.actionItemExtractionFailed, event.MeetingID, event)
+}
+
+func (p *Publisher) PublishActionItemStatusChanged(ctx context.Context, event entity.ActionItemStatusChangedEvent) error {
+	return kafkax.Publish(ctx, p.actionItemStatusChanged, event.ActionItemID, event)
 }

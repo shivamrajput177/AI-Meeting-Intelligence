@@ -64,7 +64,7 @@ func main() {
 		usecase.NewGetActionItemUseCase(repo),
 		usecase.NewListActionItemsByMeetingUseCase(repo),
 		usecase.NewListActionItemsUseCase(repo),
-		usecase.NewUpdateActionItemUseCase(repo),
+		usecase.NewUpdateActionItemUseCase(repo, publisher, log),
 	)
 
 	// Kafka connects lazily (see shared/kafkax.NewReader's doc comment on
@@ -76,7 +76,7 @@ func main() {
 	go ConsumeSummaryCompleted(ctx, reader, extract, publisher, log)
 
 	srv := httpserver.New("action-item-service", log)
-	RegisterRoutes(srv.Mux, handler)
+	RegisterRoutes(srv.Mux, handler, cfg.InternalServiceToken)
 
 	addr := ":" + cfg.Port
 	log.Info("starting", "addr", addr)

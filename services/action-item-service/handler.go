@@ -136,3 +136,27 @@ func (h *Handler) UpdateActionItem(w http.ResponseWriter, r *http.Request) error
 	httpserver.JSON(w, http.StatusOK, toActionItemResponse(item))
 	return nil
 }
+
+// ListActionItemsForMeetingInternal serves GET
+// /internal/meetings/{id}/action-items — Analytics Service's own read for
+// its per-meeting rollups, reachable with no user JWT (service-to-service
+// call). orgId travels as an explicit query parameter, the same "internal
+// caller states its own org_id" pattern meeting-service's
+// GetParticipantsInternal already uses, for the same reason: there's no
+// gateway-set JWT/org context on a direct service-to-service call.
+func (h *Handler) ListActionItemsForMeetingInternal(w http.ResponseWriter, r *http.Request) error {
+	orgID := r.URL.Query().Get("orgId")
+	if orgID == "" {
+		return apperr.BadRequest("orgId query parameter is required")
+	}
+	items, err := h.listByMeeting.ListByMeeting(r.Context(), orgID, r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	resp := make([]entity.ActionItemResponse, len(items))
+	for i, it := range items {
+		resp[i] = toActionItemResponse(it)
+	}
+	httpserver.JSON(w, http.StatusOK, resp)
+	return nil
+}

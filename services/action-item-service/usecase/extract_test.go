@@ -93,9 +93,10 @@ func (f *fakeRepository) Update(_ context.Context, _, _ string, _ entity.UpdateA
 }
 
 type fakePublisher struct {
-	mu        sync.Mutex
-	extracted []entity.ActionItemExtractedEvent
-	failed    []entity.ActionItemExtractionFailedEvent
+	mu            sync.Mutex
+	extracted     []entity.ActionItemExtractedEvent
+	failed        []entity.ActionItemExtractionFailedEvent
+	statusChanged []entity.ActionItemStatusChangedEvent
 }
 
 func (f *fakePublisher) PublishActionItemExtracted(_ context.Context, event entity.ActionItemExtractedEvent) error {
@@ -108,6 +109,12 @@ func (f *fakePublisher) PublishActionItemExtractionFailed(_ context.Context, eve
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.failed = append(f.failed, event)
+	return nil
+}
+func (f *fakePublisher) PublishActionItemStatusChanged(_ context.Context, event entity.ActionItemStatusChangedEvent) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.statusChanged = append(f.statusChanged, event)
 	return nil
 }
 

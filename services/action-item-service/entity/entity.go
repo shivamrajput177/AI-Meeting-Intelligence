@@ -154,6 +154,24 @@ type ActionItemExtractionFailedEvent struct {
 	Reason    string `json:"reason"`
 }
 
+// ActionItemStatusChangedEvent is action-item.status-changed.v1's payload
+// — kafka-init already created this topic and
+// docs/architecture/kafka-topics.md already documented it (Analytics
+// Service is its one listed consumer, for the productivity/completion-rate
+// rollups), but nothing ever actually published to it until now — the
+// same kind of gap Phase 2.6 found and fixed for
+// meeting.status-changed.v1. Published by UpdateActionItemUseCase
+// whenever a PATCH actually changes status (not on an owner/due-date-only
+// update, matching this topic's documented "owner marks done/in-progress"
+// purpose).
+type ActionItemStatusChangedEvent struct {
+	ActionItemID string  `json:"actionItemId"`
+	MeetingID    string  `json:"meetingId"`
+	OrgID        string  `json:"orgId"`
+	OwnerUserID  *string `json:"ownerUserId,omitempty"`
+	Status       string  `json:"status"`
+}
+
 // --- summary/*.go: what Client.GetSummary returns, and the wire shape it
 // decodes off the network. SummaryWireResponse mirrors
 // aisummarysvc/entity.SummaryResponse (duplicated, not imported, same
