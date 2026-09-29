@@ -30,6 +30,7 @@ type serviceConfig struct {
 	AISummaryServiceURL     string `json:"ai_summary_service_url"`
 	ActionItemServiceURL    string `json:"action_item_service_url"`
 	SearchServiceURL        string `json:"search_service_url"`
+	AnalyticsServiceURL     string `json:"analytics_service_url"`
 }
 
 func main() {
@@ -79,5 +80,6 @@ func initServiceURLs(cfg serviceConfig) ServiceURLs {
 		AISummary:     cfg.AISummaryServiceURL,
 		ActionItem:    cfg.ActionItemServiceURL,
 		Search:        cfg.SearchServiceURL,
+		Analytics:     cfg.AnalyticsServiceURL,
 	}
 }

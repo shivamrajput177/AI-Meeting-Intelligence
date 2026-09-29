@@ -24,6 +24,7 @@ type ServiceURLs struct {
 	AISummary     string
 	ActionItem    string
 	Search        string
+	Analytics     string
 }
 
 // Register mounts every /api/v1/... route documented in
@@ -111,4 +112,12 @@ func Register(mux *http.ServeMux, urls ServiceURLs, jwtSecret []byte, rdb *redis
 	protect("/api/v1/qa/ask", urls.Search)
 	protect("/api/v1/qa/history", urls.Search)
 	protectRole("POST /api/v1/search/reindex", urls.Search, "owner", "admin")
+
+	// "manager+" per docs/architecture/api-spec.md's Analytics table —
+	// the per-service half of this check is analytics-service's own
+	// routes.go RequireRole re-check on the same routes.
+	protectRole("GET /api/v1/analytics/meetings/trends", urls.Analytics, "owner", "admin", "manager")
+	protectRole("GET /api/v1/analytics/productivity", urls.Analytics, "owner", "admin", "manager")
+	protectRole("GET /api/v1/analytics/action-items/completion-rate", urls.Analytics, "owner", "admin", "manager")
+	protectRole("GET /api/v1/analytics/topics", urls.Analytics, "owner", "admin", "manager")
 }

@@ -10,5 +10,6 @@
   "transcription_service_url": "http://localhost:8084",
   "ai_summary_service_url": "http://localhost:8085",
   "action_item_service_url": "http://localhost:8086",
-  "search_service_url": "http://localhost:8087"
+  "search_service_url": "http://localhost:8087",
+  "analytics_service_url": "http://localhost:8088"
 }

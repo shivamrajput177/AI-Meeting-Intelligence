@@ -307,6 +307,19 @@ services:
       meeting-service: { condition: service_started }
       ai-summary-service: { condition: service_started }
 
+  analytics-service:
+    build: { context: .., dockerfile: deployments/Dockerfile, args: { SERVICE: analytics-service } }
+    volumes:
+      - "./configs/docker/analytics-service.json:/app/deployments/configs/analytics-service.json:ro"
+    ports: ["8088:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      kafka-init: { condition: service_completed_successfully }
+      meeting-service: { condition: service_started }
+      ai-summary-service: { condition: service_started }
+      action-item-service: { condition: service_started }
+
   api-gateway:
     build: { context: .., dockerfile: deployments/Dockerfile, args: { SERVICE: api-gateway } }
     volumes:
@@ -322,6 +335,7 @@ services:
       ai-summary-service: { condition: service_started }
       action-item-service: { condition: service_started }
       search-service: { condition: service_started }
+      analytics-service: { condition: service_started }
 
   web:
     # VITE_API_BASE_URL must be a build arg, not a runtime environment

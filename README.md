@@ -21,7 +21,7 @@ hand-written REST/JSON; there's no gRPC or protobuf codegen anywhere in
 this design (see `docs/architecture/microservices.md` §"Internal
 Communication" for why).
 
-## Status: Phase 1 (MVP) implemented, Phase 2 (2.1–2.7) fully implemented, Phase 3.1–3.4 implemented
+## Status: Phase 1 (MVP) implemented, Phase 2 (2.1–2.7) fully implemented, Phase 3 (3.1–3.5) fully implemented
 
 Auth, User, Organization, and Meeting services, the API Gateway, and a
 React web app are built and running — signup, login, JWT refresh/rotation,
@@ -149,7 +149,40 @@ enumerates at most one page of meetings (100, Meeting Service's own
 `ListMeetingsUseCase` page-size cap) — an org with more than that needs
 more than one reindex call today.
 
-**Not live-verified in this sandbox, for 2.3 through 3.4**: the egress
+Phase 3.5's Analytics Service closes out Phase 3: a pure Kafka consumer
+(its own `analytics-service` consumer group, offsets independent of every
+other service's) that rolls four already-flowing topics —
+`meeting.status-changed.v1`, `action-item.extracted.v1`,
+`action-item.status-changed.v1`, and `summary.completed.v1` — into three
+disposable/replayable rollup tables (`analytics.meeting_daily_rollup`,
+`analytics.action_item_rollup`, `analytics.topic_frequency`), the
+CQRS-style read model `docs/architecture/microservices.md` §11 describes.
+Building this also meant finishing a gap Phase 2.5 left open:
+`action-item.status-changed.v1` had been created by `kafka-init` and
+documented as Action Item Service's since Phase 2.5, but nothing actually
+published to it until now — `UpdateActionItemUseCase` publishes it on any
+PATCH that changes an item's status, keyed by `action_item_id` per its
+documented partitioning. `GET /analytics/meetings/trends`, `GET
+/analytics/productivity`, `GET /analytics/action-items/completion-rate`,
+and `GET /analytics/topics` are live behind the gateway, gated
+`manager+`(`owner`/`admin`/`manager`) at both the gateway and the
+service's own re-check.
+
+Three honest simplifications, stated plainly rather than glossed over:
+`analytics.action_item_rollup`'s schema keys "opened"/"closed" counts by
+`(org_id, owner_user_id, day)` with no "unassigned" bucket, so an action
+item extracted with no matched owner is never rolled up into anyone's
+productivity numbers; `analytics.topic_frequency`'s "topic" extraction is
+a keyword-proxy, not real NLP keyword/entity extraction — each of a
+summary's key decisions/risks/blockers becomes its own (lowercased,
+trimmed) topic string, so "the team needs to finalize the vendor contract
+by Friday" is one topic, not "vendor contract"; and every rollup write is
+an idempotent upsert with no separate dedup table, so at-least-once Kafka
+delivery redelivering the same event double-counts that rollup — an
+accepted trade-off for a read model that's explicitly disposable and
+replayable, not a source of truth.
+
+**Not live-verified in this sandbox, for 2.3 through 3.5**: the egress
 proxy here blocks all container-registry traffic, so the Kafka broker, a
 real whisper.cpp server, and a real Ollama server have never actually
 been run — the business logic (including the chunking, owner-matching,
@@ -167,7 +200,7 @@ section for a related, now-fixed finding: every repository query in this
 project filters by `org_id` explicitly rather than relying on Postgres
 RLS, which turned out to be silently inert (every service connects as
 the table owner/superuser, which RLS never applies to). **Phase 2 and
-3.1–3.4 are now fully implemented** — Phase 3.5 (Analytics Service) is
+Phase 3 (3.1–3.5) are now fully implemented** — Phase 4 (Integrations) is
 next; giving each service's DB connection its own non-superuser role so
 RLS becomes real defense-in-depth again remains an open follow-up, not
 tied to any one phase.
@@ -190,7 +223,7 @@ make up
 (equivalent to `docker compose -f deployments/docker-compose.yaml up --build`)
 
 This starts Postgres (with `pgvector` pre-installed for Phase 3), Redis,
-MinIO, Kafka, Ollama, whisper.cpp, all nine backend services, and the web
+MinIO, Kafka, Ollama, whisper.cpp, all ten backend services, and the web
 app — including two one-shot init steps that make this a genuine
 single-command bring-up: `whisper-model-init` downloads whisper.cpp's
 `ggml-base.en.bin` (~140MB) into `deployments/whisper-models/` before
@@ -211,11 +244,11 @@ and runs under Rosetta emulation — CPU transcription will be noticeably
 slower than on native x86_64, but `make up` itself will complete.
 
 **If you don't need the AI pipeline** (transcript/summary/action-item/
-search/RAG endpoints) for what you're testing right now, it's still fine
-to skip `whisper`, `whisper-model-init`, `ollama`, `ollama-model-init`,
-`transcription-service`, `ai-summary-service`, `action-item-service`, and
-`search-service` entirely and start faster by naming only the services
-you want:
+search/RAG/analytics endpoints) for what you're testing right now, it's
+still fine to skip `whisper`, `whisper-model-init`, `ollama`,
+`ollama-model-init`, `transcription-service`, `ai-summary-service`,
+`action-item-service`, `search-service`, and `analytics-service` entirely
+and start faster by naming only the services you want:
 ```bash
 docker compose -f deployments/docker-compose.yaml up --build \
   postgres redis minio kafka kafka-init \
@@ -586,6 +619,40 @@ curl -X POST {{base_url}}/search/reindex \
   -H "Authorization: Bearer {{access_token}}"
 ```
 
+#### Analytics (bearer token required, `manager`/`admin`/`owner` only, Phase 3.5)
+
+Every response here is a pre-aggregated read off a rollup table (CQRS
+read-side, see the Status section above) — a `member`/`viewer` token gets
+`403`, and results only reflect meetings/action items/summaries whose
+Kafka events Analytics Service has actually consumed (not the case in
+this sandbox — see the Status section's note on live verification).
+
+**Meeting volume/duration over the last 30 days**:
+```bash
+curl {{base_url}}/analytics/meetings/trends \
+  -H "Authorization: Bearer {{access_token}}"
+```
+
+**Per-user action item throughput** (opened/closed totals, all-time):
+```bash
+curl {{base_url}}/analytics/productivity \
+  -H "Authorization: Bearer {{access_token}}"
+```
+
+**Org-wide action item completion rate**:
+```bash
+curl {{base_url}}/analytics/action-items/completion-rate \
+  -H "Authorization: Bearer {{access_token}}"
+```
+
+**Most-discussed topics over the last 12 weeks** (top 20 by mentions —
+see the Status section's note on this being a keyword-proxy, not real NLP
+extraction):
+```bash
+curl {{base_url}}/analytics/topics \
+  -H "Authorization: Bearer {{access_token}}"
+```
+
 #### Internal service-to-service APIs (debugging only — not through the gateway)
 
 These are called by other services, never by a client, and aren't
@@ -639,6 +706,10 @@ curl "http://localhost:8083/internal/meetings/{{meeting_id}}?orgId={{org_id}}" \
 
 # Meeting Service — used by Search Service's POST /search/reindex to enumerate an org's meetings
 curl "http://localhost:8083/internal/meetings?orgId={{org_id}}" \
+  -H "X-Internal-Token: dev-internal-token"
+
+# Action Item Service — used by Analytics Service's opened-rollup to see each item's owner
+curl "http://localhost:8086/internal/meetings/{{meeting_id}}/action-items?orgId={{org_id}}" \
   -H "X-Internal-Token: dev-internal-token"
 ```
 

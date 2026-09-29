@@ -1,0 +1,10 @@
+{
+  "port": "8080",
+  "log_level": "info",
+  "database_url": "postgres://postgres:postgres@postgres:5432/meetingintel",
+  "meeting_service_url": "http://meeting-service:8080",
+  "action_item_service_url": "http://action-item-service:8080",
+  "ai_summary_service_url": "http://ai-summary-service:8080",
+  "internal_service_token": "dev-internal-token",
+  "kafka_brokers": ["kafka:9092"]
+}

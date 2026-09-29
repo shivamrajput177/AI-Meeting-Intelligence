@@ -4,6 +4,7 @@ use (
 	./shared
 	./services/action-item-service
 	./services/ai-summary-service
+	./services/analytics-service
 	./services/api-gateway
 	./services/auth-service
 	./services/meeting-service
