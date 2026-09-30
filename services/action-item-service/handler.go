@@ -15,10 +15,12 @@ import (
 )
 
 type Handler struct {
-	getActionItem    *usecase.GetActionItemUseCase
-	listByMeeting    *usecase.ListActionItemsByMeetingUseCase
-	listActionItems  *usecase.ListActionItemsUseCase
-	updateActionItem *usecase.UpdateActionItemUseCase
+	getActionItem       *usecase.GetActionItemUseCase
+	listByMeeting       *usecase.ListActionItemsByMeetingUseCase
+	listActionItems     *usecase.ListActionItemsUseCase
+	updateActionItem    *usecase.UpdateActionItemUseCase
+	requestJiraTicket   *usecase.RequestJiraTicketUseCase
+	updateActionItemInt *usecase.UpdateActionItemInternalUseCase
 }
 
 func NewHandler(
@@ -26,10 +28,13 @@ func NewHandler(
 	listByMeeting *usecase.ListActionItemsByMeetingUseCase,
 	listActionItems *usecase.ListActionItemsUseCase,
 	updateActionItem *usecase.UpdateActionItemUseCase,
+	requestJiraTicket *usecase.RequestJiraTicketUseCase,
+	updateActionItemInt *usecase.UpdateActionItemInternalUseCase,
 ) *Handler {
 	return &Handler{
 		getActionItem: getActionItem, listByMeeting: listByMeeting,
 		listActionItems: listActionItems, updateActionItem: updateActionItem,
+		requestJiraTicket: requestJiraTicket, updateActionItemInt: updateActionItemInt,
 	}
 }
 
@@ -130,6 +135,46 @@ func (h *Handler) UpdateActionItem(w http.ResponseWriter, r *http.Request) error
 		r.Context(), reqctx.OrgID(r.Context()), r.PathValue("id"),
 		reqctx.UserID(r.Context()), reqctx.Role(r.Context()), input,
 	)
+	if err != nil {
+		return err
+	}
+	httpserver.JSON(w, http.StatusOK, toActionItemResponse(item))
+	return nil
+}
+
+// RequestJiraTicket serves POST /action-items/{id}/jira-ticket — see
+// RequestJiraTicketUseCase's doc comment: this only publishes the
+// request and returns 202, it never creates a ticket itself.
+func (h *Handler) RequestJiraTicket(w http.ResponseWriter, r *http.Request) error {
+	if err := h.requestJiraTicket.RequestJiraTicket(r.Context(), reqctx.OrgID(r.Context()), r.PathValue("id")); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusAccepted)
+	return nil
+}
+
+// UpdateActionItemInternal serves PATCH /internal/action-items/{id} —
+// see UpdateActionItemInternalUseCase's doc comment for who calls this
+// and why it skips the public route's owner/admin/assigned-owner check.
+// orgId travels as an explicit query parameter, the same "internal
+// caller states its own org_id" pattern every other /internal/* route in
+// this repo uses.
+func (h *Handler) UpdateActionItemInternal(w http.ResponseWriter, r *http.Request) error {
+	orgID := r.URL.Query().Get("orgId")
+	if orgID == "" {
+		return apperr.BadRequest("orgId query parameter is required")
+	}
+	var req entity.UpdateActionItemInternalRequest
+	if err := httpserver.DecodeJSON(r, &req); err != nil {
+		return err
+	}
+	if req.Status != nil && !entity.ValidStatuses[*req.Status] {
+		return apperr.BadRequest("invalid status")
+	}
+
+	item, err := h.updateActionItemInt.UpdateActionItemInternal(r.Context(), orgID, r.PathValue("id"), entity.UpdateActionItemInput{
+		Status: req.Status, JiraIssueKey: req.JiraIssueKey,
+	})
 	if err != nil {
 		return err
 	}

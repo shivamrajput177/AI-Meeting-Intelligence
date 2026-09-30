@@ -56,6 +56,9 @@ func (f *updateFakePublisher) PublishActionItemStatusChanged(_ context.Context, 
 	f.statusChanged = append(f.statusChanged, event)
 	return nil
 }
+func (f *updateFakePublisher) PublishActionItemJiraRequested(context.Context, entity.ActionItemJiraRequestedEvent) error {
+	return errors.New("not implemented in fake")
+}
 
 func ownerPtr(s string) *string { return &s }
 

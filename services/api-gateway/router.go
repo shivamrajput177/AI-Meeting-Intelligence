@@ -25,6 +25,7 @@ type ServiceURLs struct {
 	ActionItem    string
 	Search        string
 	Analytics     string
+	Notification  string
 }
 
 // Register mounts every /api/v1/... route documented in
@@ -62,6 +63,11 @@ func Register(mux *http.ServeMux, urls ServiceURLs, jwtSecret []byte, rdb *redis
 	// abuse guard every other unauthenticated auth-adjacent route gets.
 	mux.Handle("/api/v1/invites/{token}/accept",
 		middleware.RateLimit(rdb, "invite-accept", resetBurst, resetPerMinute/60)(proxy.ForwardTo(urls.Auth)))
+	// Public like /demo/board itself is meant to be — see
+	// notificationsvc's handler.DemoBoard doc comment: the whole point of
+	// a public mock Jira board is that a stranger clicking a resume link
+	// has no JWT and needs none.
+	mux.Handle("/api/v1/demo/board", proxy.ForwardTo(urls.Notification))
 
 	auth := middleware.Auth(jwtSecret, rdb, log)
 	protect := func(pattern, target string) {
@@ -106,6 +112,7 @@ func Register(mux *http.ServeMux, urls ServiceURLs, jwtSecret []byte, rdb *redis
 	// re-checked inside action-item-service itself (see its
 	// UpdateActionItemUseCase).
 	protect("/api/v1/action-items/{id}", urls.ActionItem)
+	protect("/api/v1/action-items/{id}/jira-ticket", urls.ActionItem)
 
 	protect("/api/v1/search", urls.Search)
 	protect("/api/v1/meetings/{id}/similar", urls.Search)
@@ -120,4 +127,11 @@ func Register(mux *http.ServeMux, urls ServiceURLs, jwtSecret []byte, rdb *redis
 	protectRole("GET /api/v1/analytics/productivity", urls.Analytics, "owner", "admin", "manager")
 	protectRole("GET /api/v1/analytics/action-items/completion-rate", urls.Analytics, "owner", "admin", "manager")
 	protectRole("GET /api/v1/analytics/topics", urls.Analytics, "owner", "admin", "manager")
+
+	// "member+" per deployment-demo-strategy.md §3's API additions table
+	// — the same per-resource org-match re-check every other
+	// {orgId}-scoped route in this repo makes is notificationsvc's own
+	// requireSameOrg (see its handler.go).
+	protect("/api/v1/orgs/{orgId}/mock-jira/board", urls.Notification)
+	protect("/api/v1/orgs/{orgId}/mock-jira/issues/{issueKey}", urls.Notification)
 }

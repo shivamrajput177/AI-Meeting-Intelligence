@@ -341,6 +341,7 @@ services:
       mailhog: { condition: service_started }
       meeting-service: { condition: service_started }
       user-service: { condition: service_started }
+      action-item-service: { condition: service_started }
 
   api-gateway:
     build: { context: .., dockerfile: deployments/Dockerfile, args: { SERVICE: api-gateway } }
@@ -358,6 +359,7 @@ services:
       action-item-service: { condition: service_started }
       search-service: { condition: service_started }
       analytics-service: { condition: service_started }
+      notification-service: { condition: service_started }
 
   web:
     # VITE_API_BASE_URL must be a build arg, not a runtime environment

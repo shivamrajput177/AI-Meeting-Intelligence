@@ -17,12 +17,14 @@ const (
 	TopicActionItemExtracted        = "action-item.extracted.v1"
 	TopicActionItemExtractionFailed = "action-item.extraction-failed.v1"
 	TopicActionItemStatusChanged    = "action-item.status-changed.v1"
+	TopicActionItemJiraRequested    = "action-item.jira-requested.v1"
 )
 
 type Publisher struct {
 	actionItemExtracted        *kafkago.Writer
 	actionItemExtractionFailed *kafkago.Writer
 	actionItemStatusChanged    *kafkago.Writer
+	actionItemJiraRequested    *kafkago.Writer
 }
 
 func NewPublisher(brokers []string) *Publisher {
@@ -30,6 +32,7 @@ func NewPublisher(brokers []string) *Publisher {
 		actionItemExtracted:        kafkax.NewWriter(brokers, TopicActionItemExtracted),
 		actionItemExtractionFailed: kafkax.NewWriter(brokers, TopicActionItemExtractionFailed),
 		actionItemStatusChanged:    kafkax.NewWriter(brokers, TopicActionItemStatusChanged),
+		actionItemJiraRequested:    kafkax.NewWriter(brokers, TopicActionItemJiraRequested),
 	}
 }
 
@@ -40,7 +43,10 @@ func (p *Publisher) Close() error {
 	if err := p.actionItemExtractionFailed.Close(); err != nil {
 		return err
 	}
-	return p.actionItemStatusChanged.Close()
+	if err := p.actionItemStatusChanged.Close(); err != nil {
+		return err
+	}
+	return p.actionItemJiraRequested.Close()
 }
 
 // Every Publish* call below keys per kafka-topics.md's topic catalog:
@@ -59,4 +65,8 @@ func (p *Publisher) PublishActionItemExtractionFailed(ctx context.Context, event
 
 func (p *Publisher) PublishActionItemStatusChanged(ctx context.Context, event entity.ActionItemStatusChangedEvent) error {
 	return kafkax.Publish(ctx, p.actionItemStatusChanged, event.ActionItemID, event)
+}
+
+func (p *Publisher) PublishActionItemJiraRequested(ctx context.Context, event entity.ActionItemJiraRequestedEvent) error {
+	return kafkax.Publish(ctx, p.actionItemJiraRequested, event.ActionItemID, event)
 }

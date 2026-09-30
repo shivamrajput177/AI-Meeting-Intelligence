@@ -119,6 +119,19 @@ type UpdateActionItemRequest struct {
 	DueDate     *string `json:"dueDate,omitempty"`
 }
 
+// UpdateActionItemInternalRequest is PATCH /internal/action-items/{id}'s
+// body — Notification Service's write-back after creating a (mock or
+// real) Jira ticket, or after a mock-board card drag maps to a new
+// action item status (see deployment-demo-strategy.md §3's "genuinely
+// bidirectional" mock board). Deliberately its own smaller wire shape,
+// not UpdateActionItemRequest reused: OwnerUserID/DueDate aren't this
+// caller's to change, and JiraIssueKey is exactly the one field the
+// public request is never allowed to set.
+type UpdateActionItemInternalRequest struct {
+	Status       *string `json:"status,omitempty"`
+	JiraIssueKey *string `json:"jiraIssueKey,omitempty"`
+}
+
 // --- Kafka payloads (see docs/architecture/kafka-topics.md) ---
 
 // SummaryCompletedEvent mirrors aisummarysvc/entity.SummaryCompletedEvent
@@ -172,6 +185,21 @@ type ActionItemStatusChangedEvent struct {
 	Status       string  `json:"status"`
 }
 
+// ActionItemJiraRequestedEvent is action-item.jira-requested.v1's payload
+// — published by RequestJiraTicketUseCase when a user clicks "create
+// ticket" (POST /action-items/{id}/jira-ticket). Description travels in
+// the event itself rather than making Notification Service call back
+// into this service to re-fetch it: the handler already has the item
+// loaded when it publishes, the same "carry what the one known consumer
+// needs, skip the round-trip" reasoning as every other event payload in
+// this codebase.
+type ActionItemJiraRequestedEvent struct {
+	ActionItemID string `json:"actionItemId"`
+	MeetingID    string `json:"meetingId"`
+	OrgID        string `json:"orgId"`
+	Description  string `json:"description"`
+}
+
 // --- summary/*.go: what Client.GetSummary returns, and the wire shape it
 // decodes off the network. SummaryWireResponse mirrors
 // aisummarysvc/entity.SummaryResponse (duplicated, not imported, same
@@ -216,6 +244,12 @@ type UpdateActionItemInput struct {
 	Status      *string
 	OwnerUserID *string
 	DueDate     *time.Time
+	// JiraIssueKey is never set from the public PATCH /action-items/{id}
+	// request (UpdateActionItemRequest has no such field) — only
+	// UpdateActionItemInternalUseCase's internal caller (Notification
+	// Service, writing back a mock/real Jira ticket key) ever populates
+	// it, via a build of this struct the public handler never reaches.
+	JiraIssueKey *string
 }
 
 // --- llm/*.go: what an Extractor returns. Not a JSON wire struct. ---

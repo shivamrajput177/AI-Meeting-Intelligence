@@ -173,9 +173,10 @@ func (r *ActionItemRepository) Update(ctx context.Context, orgID, id string, inp
 			   status = COALESCE($1, status),
 			   owner_user_id = COALESCE($2, owner_user_id),
 			   due_date = COALESCE($3, due_date),
+			   jira_issue_key = COALESCE($4, jira_issue_key),
 			   updated_at = now()
-			 WHERE id = $4 AND org_id = $5`,
-			input.Status, input.OwnerUserID, input.DueDate, id, orgID,
+			 WHERE id = $5 AND org_id = $6`,
+			input.Status, input.OwnerUserID, input.DueDate, input.JiraIssueKey, id, orgID,
 		)
 		if err != nil {
 			return err

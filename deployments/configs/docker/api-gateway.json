@@ -11,5 +11,6 @@
   "ai_summary_service_url": "http://ai-summary-service:8080",
   "action_item_service_url": "http://action-item-service:8080",
   "search_service_url": "http://search-service:8080",
-  "analytics_service_url": "http://analytics-service:8080"
+  "analytics_service_url": "http://analytics-service:8080",
+  "notification_service_url": "http://notification-service:8080"
 }

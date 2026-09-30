@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/actionitems"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/email"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/entity"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/events"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/repository"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/slack"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/ticketprovider"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/logger"
 )
 
@@ -19,15 +21,22 @@ import (
 // then each row is dispatched to its channel's real external call.
 type DispatchUseCase struct {
 	repo            repository.Repository
+	jiraRepo        repository.JiraRepository
 	slack           slack.Sender
 	email           email.Sender
+	ticketProvider  ticketprovider.Provider
+	actionItems     actionitems.Client
 	publisher       events.Publisher
 	log             *logger.Logger
 	slackWebhookURL string
 }
 
-func NewDispatchUseCase(repo repository.Repository, slackSender slack.Sender, emailSender email.Sender, publisher events.Publisher, log *logger.Logger, slackWebhookURL string) *DispatchUseCase {
-	return &DispatchUseCase{repo, slackSender, emailSender, publisher, log, slackWebhookURL}
+func NewDispatchUseCase(
+	repo repository.Repository, jiraRepo repository.JiraRepository,
+	slackSender slack.Sender, emailSender email.Sender, ticketProvider ticketprovider.Provider, actionItems actionitems.Client,
+	publisher events.Publisher, log *logger.Logger, slackWebhookURL string,
+) *DispatchUseCase {
+	return &DispatchUseCase{repo, jiraRepo, slackSender, emailSender, ticketProvider, actionItems, publisher, log, slackWebhookURL}
 }
 
 // DispatchBatch claims up to batchSize eligible rows and attempts each —
@@ -90,10 +99,28 @@ func (uc *DispatchUseCase) send(ctx context.Context, row entity.OutboxRow) error
 		}
 		return uc.email.Send(ctx, p.To, p.Subject, p.Body)
 	case entity.ChannelJira:
-		// Phase 4.2/4.3's job — nothing enqueues a jira row yet (see
-		// migrations/0001_init.up.sql's own comment), so this is
-		// unreachable today, not a stub standing in for real logic.
-		return fmt.Errorf("jira dispatch not implemented until Phase 4.2/4.3")
+		var p entity.JiraPayload
+		if err := json.Unmarshal(row.Payload, &p); err != nil {
+			return fmt.Errorf("decode jira payload: %w", err)
+		}
+		ref, err := uc.ticketProvider.CreateTicket(ctx, row.OrgID, p.ActionItemID, p.Title)
+		if err != nil {
+			return fmt.Errorf("create ticket: %w", err)
+		}
+		if err := uc.jiraRepo.UpsertJiraLink(ctx, row.OrgID, p.ActionItemID, ref.Provider, ref.Key, ref.URL); err != nil {
+			return fmt.Errorf("upsert jira link: %w", err)
+		}
+		// Best-effort write-back: the ticket itself was already created
+		// successfully above, so a failure here shouldn't make the whole
+		// dispatch attempt retry (which would create a second, orphaned
+		// ticket via CreateMockIssue's own at-least-once semantics) — it's
+		// logged instead, same trade-off entity.MockJiraIssue's own board
+		// read already tolerates (the board is still the source of truth
+		// even if this one action item never learns its own ticket key).
+		if err := uc.actionItems.UpdateActionItem(ctx, row.OrgID, p.ActionItemID, nil, &ref.Key); err != nil {
+			uc.log.Error("write back jira issue key onto action item", "action_item_id", p.ActionItemID, "err", err)
+		}
+		return nil
 	default:
 		return fmt.Errorf("unknown channel %q", row.Channel)
 	}

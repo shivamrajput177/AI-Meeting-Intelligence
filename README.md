@@ -21,7 +21,7 @@ hand-written REST/JSON; there's no gRPC or protobuf codegen anywhere in
 this design (see `docs/architecture/microservices.md` §"Internal
 Communication" for why).
 
-## Status: Phase 1 (MVP) implemented, Phase 2 (2.1–2.7) fully implemented, Phase 3 (3.1–3.5) fully implemented, Phase 4.1 implemented
+## Status: Phase 1 (MVP) implemented, Phase 2 (2.1–2.7) fully implemented, Phase 3 (3.1–3.5) fully implemented, Phase 4.1–4.2 implemented
 
 Auth, User, Organization, and Meeting services, the API Gateway, and a
 React web app are built and running — signup, login, JWT refresh/rotation,
@@ -206,14 +206,46 @@ documented in `kafka-topics.md` since earlier phases but never actually
 created or published until now, the same kind of gap Phase 2.6 found and
 fixed for `meeting.status-changed.v1`.
 
-This service has **no REST API of its own yet** — `POST
-/orgs/{orgId}/integrations/test` needs Phase 4.5's org-level integration
-config to have anything real to test against, and the mock Jira board's
-routes are Phase 4.2's job; today it's purely a Kafka consumer + poller,
-using a single dev-config-wide Slack webhook URL rather than a per-org one
-(also a Phase 4.5 follow-up).
+Phase 4.2 adds mock Jira ticketing behind a `TicketProvider` interface
+(`ticketprovider.Provider`), per
+`docs/architecture/deployment-demo-strategy.md` §3's adapter design: a
+real `AtlassianJiraProvider` (Phase 4.3, stretch) will implement the same
+interface against Jira Cloud's REST API without `DispatchUseCase`'s
+dispatch logic changing at all — only which provider `main.go`
+constructs. `POST /action-items/{id}/jira-ticket` (new on Action Item
+Service) publishes `action-item.jira-requested.v1`, which Notification
+Service turns into a `channel=jira` outbox row the same poller now
+dispatches for real: `MockJiraProvider` creates a
+`notification.mock_jira_issues` row with a sequential per-org issue key
+(`DEMO-1`, `DEMO-2`, ...), records the provider-agnostic
+`notification.jira_links` mapping, and writes the resulting issue key
+back onto the action item via a new `PATCH /internal/action-items/{id}`.
+The mock board is genuinely bidirectional, not just a read-only mirror:
+`GET /demo/board` (public, no login — a real Jira Cloud board can't offer
+that to a stranger clicking a resume link) and `GET
+/orgs/{orgId}/mock-jira/board` (member+) show it, and `PATCH
+/orgs/{orgId}/mock-jira/issues/{issueKey}` (member+, moving a card
+between columns) writes the mapped status (`To Do`/`In
+Progress`/`Done` → `open`/`in_progress`/`done`) straight back onto the
+linked action item — "the same status-changed event a real Jira
+transition would" fire, with no webhook needed today because there's no
+real Jira in the loop yet.
 
-**Not live-verified in this sandbox, for 2.3 through 4.1**: the egress
+Three honest simplifications here too: `CreateMockIssue`'s per-org
+sequential numbering is a `SELECT MAX(...) + 1` subquery, not a real
+sequence or advisory lock, so two concurrent ticket creations for the
+same org could race (the table's unique index turns that into a retried
+error, not a silent duplicate — an acceptable trade-off at demo scale,
+not a real ticketing system's guarantee); the write-back onto the action
+item (issue key after creation, status after a board transition) is
+best-effort — logged on failure, never rolled back, so a down Action
+Item Service leaves the mock board and the action item's own state
+briefly out of sync rather than losing the ticket/transition itself; and
+the Slack webhook URL/SMTP settings/ticket provider are still a single
+dev-config-wide value, not per-org — Phase 4.5's Organization Service
+integration config is what makes any of this per-tenant.
+
+**Not live-verified in this sandbox, for 2.3 through 4.2**: the egress
 proxy here blocks all container-registry traffic, so the Kafka broker, a
 real whisper.cpp server, and a real Ollama server have never actually
 been run — the business logic (including the chunking, owner-matching,
@@ -231,11 +263,12 @@ section for a related, now-fixed finding: every repository query in this
 project filters by `org_id` explicitly rather than relying on Postgres
 RLS, which turned out to be silently inert (every service connects as
 the table owner/superuser, which RLS never applies to). **Phase 2 and
-Phase 3 (3.1–3.5) are now fully implemented, and Phase 4.1 (Notification
-Service — core) is in** — Phase 4.2 (mock Jira ticketing) is next; giving
-each service's DB connection its own non-superuser role so RLS becomes
-real defense-in-depth again remains an open follow-up, not tied to any
-one phase.
+Phase 3 (3.1–3.5) are now fully implemented, and Phase 4.1–4.2
+(Notification Service core + mock Jira ticketing) are in** — Phase 4.3
+(real Jira, stretch) or 4.4 (reminder scheduler) is next; giving each
+service's DB connection its own non-superuser role so RLS becomes real
+defense-in-depth again remains an open follow-up, not tied to any one
+phase.
 
 The backend is a **Go workspace** (`go.work` at the repo root): `shared/`
 is its own Go module with no `internal/` in its path, so every
@@ -292,8 +325,23 @@ docker compose -f deployments/docker-compose.yaml up --build \
   organization-service user-service auth-service meeting-service \
   api-gateway web
 ```
-That covers every Auth/Users/Organizations/Meetings endpoint in the API
-Reference below — just not Transcript/Summary/Action Items/Search. Then:
+**Caveat found while wiring Phase 4.2's own dependencies**: this doesn't
+actually skip anything today. `api-gateway` itself `depends_on` every
+backend service it can route to (since Phase 2.5 added Action Item
+Service to that list, and Analytics/Search/Notification followed) —
+Compose always starts a named service's full transitive `depends_on`
+graph, so naming `api-gateway` here pulls in the entire AI pipeline
+regardless of what else is listed (`docker compose config` confirms this:
+`api-gateway`'s resolved `depends_on` already includes
+`action-item-service`, `ai-summary-service`, `analytics-service`,
+`search-service`, `transcription-service`, and `notification-service`).
+A real fix (Compose profiles, tagging the AI-pipeline services so they
+opt out of a base `up`) is a Phase 5 (Kubernetes & CI/CD)-adjacent
+infra task, not done here — for a genuinely faster first bring-up today,
+drop `api-gateway`/`web` from the list above and curl each core service
+directly on its own port (see Configuration below for the port map)
+instead of through the gateway.
+Then:
 
 - **Web app**: http://localhost:5173 — sign up, log in, upload a
   recording, watch it show up in your meeting list.
@@ -341,6 +389,7 @@ against your environment automatically. To run a command with plain
 | `role` | *(empty)* | `role` in `GET /users/me`'s response — `POST /auth/refresh` needs this |
 | `meeting_id` | *(empty)* | `meetingId` in `POST /meetings`'s response |
 | `action_item_id` | *(empty)* | `id` of any entry in `GET /meetings/{{meeting_id}}/action-items`'s `data` array |
+| `issue_key` | *(empty)* | `issueKey` of any entry in a mock Jira board's `data` array (e.g. `GET /orgs/{{org_id}}/mock-jira/board`) |
 | `invite_token` | *(empty)* | logged by user-service as `dev_invite_token` (see `POST /orgs/{orgId}/invites` below) |
 | `reset_token` | *(empty)* | logged by auth-service as `dev_reset_token`, or `devToken` in the response if `auth_dev_expose_reset_token: true` |
 
@@ -615,6 +664,42 @@ curl -X PATCH {{base_url}}/action-items/{{action_item_id}} \
   -d '{"status": "in_progress"}'
 ```
 
+**Create a Jira ticket** (Phase 4.2) — 202 Accepted; the ticket itself is
+created asynchronously by Notification Service's outbox dispatch (mock
+Jira by default — see the Status section above), which writes the
+resulting `jiraIssueKey` back onto this same action item once done:
+```bash
+curl -X POST {{base_url}}/action-items/{{action_item_id}}/jira-ticket \
+  -H "Authorization: Bearer {{access_token}}"
+```
+
+#### Ticketing — mock Jira board (Phase 4.2)
+
+The board is genuinely bidirectional (see the Status section above): a
+`PATCH` here writes the mapped status back onto the linked action item,
+the same way a real Jira transition eventually will.
+
+**Public demo board** (no auth — only populated once `demo_org_id` is
+configured, see Configuration below):
+```bash
+curl {{base_url}}/demo/board
+```
+
+**Your org's mock Jira board**:
+```bash
+curl {{base_url}}/orgs/{{org_id}}/mock-jira/board \
+  -H "Authorization: Bearer {{access_token}}"
+```
+
+**Move a card between columns** — `status` is one of `"To Do"`,
+`"In Progress"`, `"Done"`:
+```bash
+curl -X PATCH {{base_url}}/orgs/{{org_id}}/mock-jira/issues/{{issue_key}} \
+  -H "Authorization: Bearer {{access_token}}" \
+  -H "Content-Type: application/json" \
+  -d '{"status": "In Progress"}'
+```
+
 #### Search & RAG (bearer token required, Phase 3.1–3.4)
 
 Like Transcript/Summary/Action Items above, these only return real
@@ -755,6 +840,12 @@ curl "http://localhost:8086/internal/meetings/{{meeting_id}}/action-items?orgId=
 # User Service — used by Notification Service to resolve a meeting creator's email
 curl "http://localhost:8081/internal/users/{{user_id}}?orgId={{org_id}}" \
   -H "X-Internal-Token: dev-internal-token"
+
+# Action Item Service — used by Notification Service to write back a Jira issue key or mock-board-driven status change
+curl -X PATCH "http://localhost:8086/internal/action-items/{{action_item_id}}?orgId={{org_id}}" \
+  -H "X-Internal-Token: dev-internal-token" \
+  -H "Content-Type: application/json" \
+  -d '{"jiraIssueKey": "DEMO-1"}'
 ```
 
 ### Configuration

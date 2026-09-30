@@ -65,6 +65,8 @@ func main() {
 		usecase.NewListActionItemsByMeetingUseCase(repo),
 		usecase.NewListActionItemsUseCase(repo),
 		usecase.NewUpdateActionItemUseCase(repo, publisher, log),
+		usecase.NewRequestJiraTicketUseCase(repo, publisher),
+		usecase.NewUpdateActionItemInternalUseCase(repo),
 	)
 
 	// Kafka connects lazily (see shared/kafkax.NewReader's doc comment on

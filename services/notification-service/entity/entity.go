@@ -11,10 +11,10 @@ package entity
 import "time"
 
 // Channel values — mirrors docs/architecture/microservices.md §10's
-// notification.outbox CHECK (channel IN ('slack','email','jira')). 'jira'
-// is accepted by the schema from the start (see migrations/0001_init.up.sql's
-// own comment) but nothing enqueues or dispatches it yet — that's Phase
-// 4.2/4.3's job.
+// notification.outbox CHECK (channel IN ('slack','email','jira')). As of
+// Phase 4.2, ChannelJira is enqueued by EnqueueJiraTicketUseCase and
+// dispatched by DispatchUseCase via a ticketprovider.Provider (mock only
+// for now — AtlassianJiraProvider is Phase 4.3's stretch job).
 const (
 	ChannelSlack = "slack"
 	ChannelEmail = "email"
@@ -58,6 +58,60 @@ type EmailPayload struct {
 	Body    string `json:"body"`
 }
 
+// JiraPayload is a ChannelJira row's JSONB payload shape — just enough
+// for DispatchUseCase's ticketprovider.Provider.CreateTicket call
+// (ActionItemID to link the ticket, Title as the ticket's summary text).
+type JiraPayload struct {
+	ActionItemID string `json:"actionItemId"`
+	Title        string `json:"title"`
+}
+
+// MockJiraIssue is this service's own internal model of one
+// notification.mock_jira_issues row — see
+// docs/architecture/deployment-demo-strategy.md §3.
+type MockJiraIssue struct {
+	ID           string
+	OrgID        string
+	ActionItemID string
+	IssueKey     string
+	ProjectKey   string
+	Title        string
+	Status       string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+// Mock Jira board status values — the CHECK constraint on
+// notification.mock_jira_issues.status.
+const (
+	MockStatusToDo       = "To Do"
+	MockStatusInProgress = "In Progress"
+	MockStatusDone       = "Done"
+)
+
+var ValidMockStatuses = map[string]bool{MockStatusToDo: true, MockStatusInProgress: true, MockStatusDone: true}
+
+// --- handler.go: the mock Jira board's own REST API
+// (deployment-demo-strategy.md §3's API additions table). ---
+
+type MockJiraIssueResponse struct {
+	IssueKey   string `json:"issueKey"`
+	ProjectKey string `json:"projectKey"`
+	Title      string `json:"title"`
+	Status     string `json:"status"`
+}
+
+type MockJiraBoardResponse struct {
+	Data []MockJiraIssueResponse `json:"data"`
+}
+
+// TransitionMockIssueRequest is PATCH
+// /orgs/{orgId}/mock-jira/issues/{issueKey}'s body — a manual column
+// move, per deployment-demo-strategy.md §3's table.
+type TransitionMockIssueRequest struct {
+	Status string `json:"status"`
+}
+
 // --- Kafka payloads consumed (see docs/architecture/kafka-topics.md). Both
 // are duplicated from their producing service's own entity package, not
 // imported — the same cross-service-boundary rule every other service in
@@ -75,6 +129,15 @@ type ActionItemExtractedEvent struct {
 	MeetingID string `json:"meetingId"`
 	OrgID     string `json:"orgId"`
 	ItemCount int    `json:"itemCount"`
+}
+
+// ActionItemJiraRequestedEvent mirrors
+// actionitemsvc/entity.ActionItemJiraRequestedEvent.
+type ActionItemJiraRequestedEvent struct {
+	ActionItemID string `json:"actionItemId"`
+	MeetingID    string `json:"meetingId"`
+	OrgID        string `json:"orgId"`
+	Description  string `json:"description"`
 }
 
 // --- Kafka payloads produced (see docs/architecture/kafka-topics.md's
@@ -118,4 +181,14 @@ type MeetingWireResponse struct {
 
 type UserWireResponse struct {
 	Email string `json:"email"`
+}
+
+// --- actionitems/*.go: the wire shape Client.UpdateActionItem sends.
+// Mirrors actionitemsvc/entity.UpdateActionItemInternalRequest exactly
+// (duplicated, not imported, same cross-service-boundary reason as the
+// Kafka payloads above). ---
+
+type UpdateActionItemInternalRequest struct {
+	Status       *string `json:"status,omitempty"`
+	JiraIssueKey *string `json:"jiraIssueKey,omitempty"`
 }

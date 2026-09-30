@@ -31,6 +31,7 @@ type serviceConfig struct {
 	ActionItemServiceURL    string `json:"action_item_service_url"`
 	SearchServiceURL        string `json:"search_service_url"`
 	AnalyticsServiceURL     string `json:"analytics_service_url"`
+	NotificationServiceURL  string `json:"notification_service_url"`
 }
 
 func main() {
@@ -81,5 +82,6 @@ func initServiceURLs(cfg serviceConfig) ServiceURLs {
 		ActionItem:    cfg.ActionItemServiceURL,
 		Search:        cfg.SearchServiceURL,
 		Analytics:     cfg.AnalyticsServiceURL,
+		Notification:  cfg.NotificationServiceURL,
 	}
 }

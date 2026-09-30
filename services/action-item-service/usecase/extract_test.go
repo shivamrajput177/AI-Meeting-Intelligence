@@ -97,6 +97,7 @@ type fakePublisher struct {
 	extracted     []entity.ActionItemExtractedEvent
 	failed        []entity.ActionItemExtractionFailedEvent
 	statusChanged []entity.ActionItemStatusChangedEvent
+	jiraRequested []entity.ActionItemJiraRequestedEvent
 }
 
 func (f *fakePublisher) PublishActionItemExtracted(_ context.Context, event entity.ActionItemExtractedEvent) error {
@@ -115,6 +116,12 @@ func (f *fakePublisher) PublishActionItemStatusChanged(_ context.Context, event 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.statusChanged = append(f.statusChanged, event)
+	return nil
+}
+func (f *fakePublisher) PublishActionItemJiraRequested(_ context.Context, event entity.ActionItemJiraRequestedEvent) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.jiraRequested = append(f.jiraRequested, event)
 	return nil
 }
 

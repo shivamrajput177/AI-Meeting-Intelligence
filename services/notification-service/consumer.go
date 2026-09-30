@@ -30,8 +30,9 @@ import (
 // in this repo (services never import each other's Go packages, only
 // communicate over REST/Kafka).
 const (
-	topicSummaryCompleted    = "summary.completed.v1"
-	topicActionItemExtracted = "action-item.extracted.v1"
+	topicSummaryCompleted        = "summary.completed.v1"
+	topicActionItemExtracted     = "action-item.extracted.v1"
+	topicActionItemJiraRequested = "action-item.jira-requested.v1"
 )
 
 const maxConsumeAttempts = 3
@@ -123,6 +124,27 @@ func ConsumeActionItemExtracted(ctx context.Context, reader *kafkago.Reader, uc 
 		}
 		retryThenCommit(ctx, reader, msg, topicActionItemExtracted, log, func() error {
 			return uc.EnqueueActionItemDigest(msgCtx, event.OrgID, event.MeetingID, event.ItemCount)
+		})
+	}
+}
+
+func ConsumeActionItemJiraRequested(ctx context.Context, reader *kafkago.Reader, uc *usecase.EnqueueJiraTicketUseCase, log *logger.Logger) {
+	for {
+		var event entity.ActionItemJiraRequestedEvent
+		msg, msgCtx, decoded, err := fetchAndDecode(ctx, reader, &event, log)
+		if err != nil {
+			if ctx.Err() != nil {
+				return // shutting down
+			}
+			log.Error("fetch message", "topic", topicActionItemJiraRequested, "err", err)
+			time.Sleep(time.Second)
+			continue
+		}
+		if !decoded {
+			continue
+		}
+		retryThenCommit(ctx, reader, msg, topicActionItemJiraRequested, log, func() error {
+			return uc.EnqueueJiraTicket(msgCtx, event.OrgID, event.ActionItemID, event.Description)
 		})
 	}
 }

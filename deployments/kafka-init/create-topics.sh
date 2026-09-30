@@ -7,14 +7,14 @@
 #
 # Scope: only topics *produced* by a landed phase's service (Meeting,
 # Transcription, AI Summary, Action Item — Phase 2; Search — Phase 3;
-# Notification — Phase 4.1; see docs/ROADMAP.md) are created here. The
-# catalog also documents topics owned by later phases' services
-# (Analytics's own consumer group needs no topics of its own to create,
-# and Auth/User/Org's own event stream, plus Notification's own
-# action-item.jira-requested.v1/action-item.reminder-due.v1 consumed
-# topics, land in Phase 4.2-4.5) — those get created here once the phase
-# that builds their producer lands, the same way this file itself didn't
-# exist until Phase 2 needed it.
+# Notification — Phase 4.1; Action Item's own jira-requested topic —
+# Phase 4.2; see docs/ROADMAP.md) are created here. The catalog also
+# documents topics owned by later phases' services (Analytics's own
+# consumer group needs no topics of its own to create, and Auth/User/Org's
+# own event stream, plus Notification's own
+# action-item.reminder-due.v1 consumed topic, land in Phase 4.4-4.5) —
+# those get created here once the phase that builds their producer lands,
+# the same way this file itself didn't exist until Phase 2 needed it.
 #
 # DLQ topics: per kafka-topics.md's own rule, only *.completed.v1,
 # *.extracted.v1, and *.status-changed.v1 topics get a .dlq companion —
@@ -53,6 +53,7 @@ create_topic action-item.extracted.v1.dlq         12 $((30 * DAY))
 create_topic action-item.extraction-failed.v1     12 $((7 * DAY))
 create_topic action-item.status-changed.v1         6 $((30 * DAY))
 create_topic action-item.status-changed.v1.dlq     6 $((30 * DAY))
+create_topic action-item.jira-requested.v1          6 $((7 * DAY))
 
 create_topic embedding.completed.v1               12 $((7 * DAY))
 create_topic embedding.completed.v1.dlq           12 $((7 * DAY))

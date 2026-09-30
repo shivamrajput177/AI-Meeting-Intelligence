@@ -44,13 +44,15 @@ services actually produce: `meeting.uploaded.v1`/`meeting.status-changed.v1`/
 Service), `action-item.extracted.v1`/`action-item.extraction-failed.v1`/
 `action-item.status-changed.v1` (Action Item Service) — the four services
 docs/ROADMAP.md's Phase 2 builds — and, since Phase 3.2,
-`embedding.completed.v1`/`embedding.failed.v1` (Search Service), and since
+`embedding.completed.v1`/`embedding.failed.v1` (Search Service); since
 Phase 4.1, `notification.sent.v1`/`notification.failed.v1` (Notification
-Service — Analytics Service itself produces nothing, only consumes). The
-rest of the catalog below is created once the phase that builds its
+Service — Analytics Service itself produces nothing, only consumes); and
+since Phase 4.2, `action-item.jira-requested.v1` (Action Item Service,
+consumed by Notification Service's mock/real ticket-creation dispatch).
+The rest of the catalog below is created once the phase that builds its
 producer (Auth/User/Org's own events, and Notification's own
-action-item.jira-requested.v1/action-item.reminder-due.v1, Phase 4.2-4.5)
-lands, the same way this script itself didn't exist before Phase 2 needed
+action-item.reminder-due.v1, Phase 4.4-4.5) lands, the same way this
+script itself didn't exist before Phase 2 needed
 it.
 
 ## Topic Catalog

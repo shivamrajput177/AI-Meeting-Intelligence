@@ -7,12 +7,14 @@ import (
 
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/entity"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/meetings"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/ticketprovider"
 )
 
-// fakeRepository, fakeMeetingsClient, fakeUsersClient, fakeSlackSender,
-// fakeEmailSender, and fakePublisher are in-memory stand-ins for the real
-// Postgres-/HTTP-backed implementations — this package's own tests never
-// touch a live Postgres or another service over HTTP.
+// fakeRepository, fakeJiraRepository, fakeMeetingsClient, fakeUsersClient,
+// fakeActionItemsClient, fakeSlackSender, fakeEmailSender,
+// fakeTicketProvider, and fakePublisher are in-memory stand-ins for the
+// real Postgres-/HTTP-backed implementations — this package's own tests
+// never touch a live Postgres or another service over HTTP.
 
 type enqueuedRow struct {
 	orgID, channel string
@@ -60,6 +62,88 @@ func (f *fakeRepository) MarkAttemptFailed(_ context.Context, id string, _ int, 
 	}
 	f.failed = append(f.failed, id)
 	return nil
+}
+
+type mockIssue struct{ orgID, actionItemID, title string }
+type transitionCall struct{ orgID, issueKey, status string }
+type jiraLinkCall struct{ orgID, actionItemID, provider, issueKey, url string }
+
+type fakeJiraRepository struct {
+	mu sync.Mutex
+
+	created      []mockIssue
+	nextIssueKey string
+	createErr    error
+
+	transitions      []transitionCall
+	transitionResult string
+	transitionErr    error
+
+	board    []entity.MockJiraIssue
+	boardErr error
+
+	links []jiraLinkCall
+}
+
+func (f *fakeJiraRepository) CreateMockIssue(_ context.Context, orgID, actionItemID, title string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.createErr != nil {
+		return "", f.createErr
+	}
+	f.created = append(f.created, mockIssue{orgID, actionItemID, title})
+	return f.nextIssueKey, nil
+}
+
+func (f *fakeJiraRepository) TransitionMockIssue(_ context.Context, orgID, issueKey, newStatus string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.transitionErr != nil {
+		return "", f.transitionErr
+	}
+	f.transitions = append(f.transitions, transitionCall{orgID, issueKey, newStatus})
+	return f.transitionResult, nil
+}
+
+func (f *fakeJiraRepository) ListMockBoard(context.Context, string) ([]entity.MockJiraIssue, error) {
+	return f.board, f.boardErr
+}
+
+func (f *fakeJiraRepository) UpsertJiraLink(_ context.Context, orgID, actionItemID, provider, issueKey, url string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.links = append(f.links, jiraLinkCall{orgID, actionItemID, provider, issueKey, url})
+	return nil
+}
+
+type updateActionItemCall struct {
+	orgID, actionItemID string
+	status, jiraKey     *string
+}
+
+type fakeActionItemsClient struct {
+	mu      sync.Mutex
+	updates []updateActionItemCall
+	err     error
+}
+
+func (f *fakeActionItemsClient) UpdateActionItem(_ context.Context, orgID, actionItemID string, status, jiraIssueKey *string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return f.err
+	}
+	f.updates = append(f.updates, updateActionItemCall{orgID, actionItemID, status, jiraIssueKey})
+	return nil
+}
+
+type fakeTicketProvider struct {
+	ref ticketprovider.TicketRef
+	err error
+}
+
+func (f *fakeTicketProvider) CreateTicket(context.Context, string, string, string) (ticketprovider.TicketRef, error) {
+	return f.ref, f.err
 }
 
 type fakeMeetingsClient struct {

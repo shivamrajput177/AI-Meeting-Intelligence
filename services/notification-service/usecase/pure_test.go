@@ -3,6 +3,8 @@ package usecase
 import (
 	"strings"
 	"testing"
+
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/entity"
 )
 
 func TestRenderSummaryCompletedSlackText(t *testing.T) {
@@ -52,6 +54,25 @@ func TestShouldGiveUp(t *testing.T) {
 	for _, tt := range tests {
 		if got := shouldGiveUp(tt.attempts); got != tt.want {
 			t.Errorf("shouldGiveUp(%d) = %v, want %v", tt.attempts, got, tt.want)
+		}
+	}
+}
+
+func TestMapMockStatusToActionItemStatus(t *testing.T) {
+	tests := []struct {
+		mockStatus string
+		want       string
+		wantOK     bool
+	}{
+		{entity.MockStatusToDo, actionItemStatusOpen, true},
+		{entity.MockStatusInProgress, actionItemStatusInProgress, true},
+		{entity.MockStatusDone, actionItemStatusDone, true},
+		{"Blocked", "", false},
+	}
+	for _, tt := range tests {
+		got, ok := mapMockStatusToActionItemStatus(tt.mockStatus)
+		if got != tt.want || ok != tt.wantOK {
+			t.Errorf("mapMockStatusToActionItemStatus(%q) = (%q, %v), want (%q, %v)", tt.mockStatus, got, ok, tt.want, tt.wantOK)
 		}
 	}
 }
