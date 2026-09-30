@@ -342,6 +342,7 @@ services:
       meeting-service: { condition: service_started }
       user-service: { condition: service_started }
       action-item-service: { condition: service_started }
+      organization-service: { condition: service_started }
 
   api-gateway:
     build: { context: .., dockerfile: deployments/Dockerfile, args: { SERVICE: api-gateway } }

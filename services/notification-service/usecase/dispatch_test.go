@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/entity"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/orgs"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/ticketprovider"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/logger"
 )
@@ -38,7 +39,11 @@ func marshalJira(t *testing.T, actionItemID, title string) []byte {
 }
 
 // dispatchDeps bundles every fake DispatchUseCase depends on, so each test
-// only needs to override the ones it cares about.
+// only needs to override the ones it cares about. ticketProvider is
+// registered under the "mock_jira" key (see newDispatchUseCase) — orgs
+// defaults to a fakeOrgsClient selecting that same provider with no Slack
+// webhook override when left nil, so existing tests that don't care about
+// per-org config keep working unchanged.
 type dispatchDeps struct {
 	repo           *fakeRepository
 	jiraRepo       *fakeJiraRepository
@@ -46,11 +51,20 @@ type dispatchDeps struct {
 	email          *fakeEmailSender
 	ticketProvider *fakeTicketProvider
 	actionItems    *fakeActionItemsClient
+	orgs           *fakeOrgsClient
 	pub            *fakePublisher
 }
 
 func newDispatchUseCase(d dispatchDeps, slackWebhookURL string) *DispatchUseCase {
-	return NewDispatchUseCase(d.repo, d.jiraRepo, d.slack, d.email, d.ticketProvider, d.actionItems, d.pub, logger.New("test", logger.LevelError), slackWebhookURL)
+	providers := map[string]ticketprovider.Provider{}
+	if d.ticketProvider != nil {
+		providers["mock_jira"] = d.ticketProvider
+	}
+	orgsClient := d.orgs
+	if orgsClient == nil {
+		orgsClient = &fakeOrgsClient{}
+	}
+	return NewDispatchUseCase(d.repo, d.jiraRepo, d.slack, d.email, providers, d.actionItems, orgsClient, d.pub, logger.New("test", logger.LevelError), slackWebhookURL)
 }
 
 func TestDispatchBatch_SlackSuccess(t *testing.T) {
@@ -167,6 +181,69 @@ func TestDispatchBatch_GivesUpAfterMaxAttempts(t *testing.T) {
 	}
 	if len(d.pub.failed) != 1 || d.pub.failed[0].OutboxID != "row-4" {
 		t.Fatalf("expected notification.failed.v1 published for row-4, got %+v", d.pub.failed)
+	}
+}
+
+// TestDispatchBatch_SlackUsesOrgWebhookOverDefault covers Phase 4.5's
+// per-org Slack webhook override: an org with its own configured webhook
+// (via orgs.Client) takes precedence over this service's dev-config-wide
+// default, even though a default was also supplied.
+func TestDispatchBatch_SlackUsesOrgWebhookOverDefault(t *testing.T) {
+	repo := &fakeRepository{claimRows: []entity.OutboxRow{
+		{ID: "row-org-webhook", OrgID: "org-1", Channel: entity.ChannelSlack, Payload: marshalSlack(t, "hello")},
+	}}
+	orgWebhook := "https://hooks.slack.example/org-specific"
+	orgsClient := &fakeOrgsClient{config: &orgs.IntegrationConfig{SlackWebhookURL: &orgWebhook, TicketProvider: "mock_jira"}}
+	d := dispatchDeps{repo: repo, jiraRepo: &fakeJiraRepository{}, slack: &fakeSlackSender{}, email: &fakeEmailSender{}, ticketProvider: &fakeTicketProvider{}, actionItems: &fakeActionItemsClient{}, orgs: orgsClient, pub: &fakePublisher{}}
+	uc := newDispatchUseCase(d, "https://hooks.slack.example/dev-config-default")
+
+	if _, err := uc.DispatchBatch(context.Background(), 20); err != nil {
+		t.Fatalf("DispatchBatch: %v", err)
+	}
+	if len(d.slack.sent) != 1 || d.slack.sent[0].webhookURL != orgWebhook {
+		t.Fatalf("expected the org's own webhook to be used, got %+v", d.slack.sent)
+	}
+}
+
+// TestDispatchBatch_SlackFallsBackToDefaultWhenOrgUnset covers the other
+// half: an org with no Slack webhook configured of its own falls back to
+// this service's dev-config-wide default.
+func TestDispatchBatch_SlackFallsBackToDefaultWhenOrgUnset(t *testing.T) {
+	repo := &fakeRepository{claimRows: []entity.OutboxRow{
+		{ID: "row-fallback", OrgID: "org-1", Channel: entity.ChannelSlack, Payload: marshalSlack(t, "hello")},
+	}}
+	d := dispatchDeps{repo: repo, jiraRepo: &fakeJiraRepository{}, slack: &fakeSlackSender{}, email: &fakeEmailSender{}, ticketProvider: &fakeTicketProvider{}, actionItems: &fakeActionItemsClient{}, orgs: &fakeOrgsClient{}, pub: &fakePublisher{}}
+	uc := newDispatchUseCase(d, "https://hooks.slack.example/dev-config-default")
+
+	if _, err := uc.DispatchBatch(context.Background(), 20); err != nil {
+		t.Fatalf("DispatchBatch: %v", err)
+	}
+	if len(d.slack.sent) != 1 || d.slack.sent[0].webhookURL != "https://hooks.slack.example/dev-config-default" {
+		t.Fatalf("expected the dev-config default webhook, got %+v", d.slack.sent)
+	}
+}
+
+// TestDispatchBatch_JiraUnregisteredProviderFails covers Phase 4.5's
+// ticket-provider registry: an org configured for a provider with no
+// entry in ticketProviders (e.g. "atlassian_jira", still unbuilt) fails
+// the dispatch with a clear error rather than silently using whatever
+// provider happens to be registered.
+func TestDispatchBatch_JiraUnregisteredProviderFails(t *testing.T) {
+	repo := &fakeRepository{claimRows: []entity.OutboxRow{
+		{ID: "row-unregistered", OrgID: "org-1", Channel: entity.ChannelJira, Payload: marshalJira(t, "item-1", "Ship the API")},
+	}}
+	orgsClient := &fakeOrgsClient{config: &orgs.IntegrationConfig{TicketProvider: "atlassian_jira"}}
+	d := dispatchDeps{repo: repo, jiraRepo: &fakeJiraRepository{}, slack: &fakeSlackSender{}, email: &fakeEmailSender{}, ticketProvider: &fakeTicketProvider{}, actionItems: &fakeActionItemsClient{}, orgs: orgsClient, pub: &fakePublisher{}}
+	uc := newDispatchUseCase(d, "")
+
+	if _, err := uc.DispatchBatch(context.Background(), 20); err != nil {
+		t.Fatalf("DispatchBatch: %v", err)
+	}
+	if len(repo.failed) != 1 || repo.failed[0] != "row-unregistered" {
+		t.Fatalf("expected the row recorded as a failed attempt, got %v", repo.failed)
+	}
+	if len(repo.sent) != 0 {
+		t.Fatalf("expected no successful send for an unregistered provider, got %v", repo.sent)
 	}
 }
 

@@ -47,3 +47,73 @@ type OrgResponse struct {
 type CreateOrgInput struct {
 	Name string
 }
+
+// Ticket provider values — the CHECK constraint on
+// org.integration_configs.ticket_provider (see migrations/0002's own doc
+// comment on why this column exists at all). Only TicketProviderMockJira
+// has a real dispatch implementation anywhere in this codebase —
+// TicketProviderAtlassianJira is accepted and stored (Phase 4.3's real
+// Jira provider is an explicit, still-skipped stretch item), and
+// Notification Service's own dispatch returns a clear "not implemented"
+// error if an org is ever configured with it, rather than silently
+// falling back to mock.
+const (
+	TicketProviderMockJira      = "mock_jira"
+	TicketProviderAtlassianJira = "atlassian_jira"
+)
+
+var ValidTicketProviders = map[string]bool{TicketProviderMockJira: true, TicketProviderAtlassianJira: true}
+
+// IntegrationConfig is this service's own internal model of one
+// org.integration_configs row — what repository reads/writes and usecase
+// operates on. Not JSON-tagged: handler.go always reshapes it into an
+// IntegrationConfigResponse first. Every org gets one of these at
+// creation time (see OrgRepository.Create's own doc comment), so this is
+// never nil for an org that exists — no separate "not configured yet"
+// state to handle.
+type IntegrationConfig struct {
+	OrgID                 string
+	SlackWebhookURL       *string
+	TicketProvider        string
+	JiraBaseURL           *string
+	JiraProjectKey        *string
+	JiraAPITokenSecretRef *string
+	SMTPConfigSecretRef   *string
+}
+
+// --- handler.go: PATCH /orgs/{orgId}/settings' own REST API. Scoped to
+// integration config only (docs/ROADMAP.md Phase 4.5's actual task,
+// "Org-level integration config CRUD") — general org settings (name,
+// plan) have no usecase built for them in any phase yet, so this route
+// doesn't invent one speculatively. SMTPConfigSecretRef is deliberately
+// not exposed here: nothing in this codebase reads it yet (Notification
+// Service's SMTP settings are still dev-config-wide, not per-org — see
+// README's own honest note on that gap), so there's no real value yet
+// in letting a caller set it. ---
+
+type UpdateIntegrationConfigRequest struct {
+	SlackWebhookURL       *string `json:"slackWebhookUrl,omitempty"`
+	TicketProvider        *string `json:"ticketProvider,omitempty"`
+	JiraBaseURL           *string `json:"jiraBaseUrl,omitempty"`
+	JiraProjectKey        *string `json:"jiraProjectKey,omitempty"`
+	JiraAPITokenSecretRef *string `json:"jiraApiTokenSecretRef,omitempty"`
+}
+
+type IntegrationConfigResponse struct {
+	SlackWebhookURL       *string `json:"slackWebhookUrl,omitempty"`
+	TicketProvider        string  `json:"ticketProvider"`
+	JiraBaseURL           *string `json:"jiraBaseUrl,omitempty"`
+	JiraProjectKey        *string `json:"jiraProjectKey,omitempty"`
+	JiraAPITokenSecretRef *string `json:"jiraApiTokenSecretRef,omitempty"`
+}
+
+// UpdateIntegrationConfigInput is UpdateIntegrationConfigUseCase.Execute's
+// input — the usecase layer's own Go-to-Go call contract (no json tags),
+// passed by handler/ straight from a decoded UpdateIntegrationConfigRequest.
+type UpdateIntegrationConfigInput struct {
+	SlackWebhookURL       *string
+	TicketProvider        *string
+	JiraBaseURL           *string
+	JiraProjectKey        *string
+	JiraAPITokenSecretRef *string
+}

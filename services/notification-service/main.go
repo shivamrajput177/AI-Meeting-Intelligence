@@ -2,23 +2,30 @@
 // docs/architecture/microservices.md §10.
 //
 // Phase 4.2 gave this service its first REST routes: the mock Jira board
-// (handler.go/routes.go). POST /orgs/{orgId}/integrations/test is still
-// deferred — it needs Phase 4.5's org-level integration config to have
-// anything real to test against.
+// (handler.go/routes.go).
 //
 // Phase 4.4 adds the reminder scheduler (scheduler.go) — a leader-elected
 // goroutine, unlike every other loop here, since it's the one place two
 // replicas acting at once could double-publish the same reminder (see
 // scheduler.go's own doc comment).
 //
-// slackWebhookURL/SMTP settings, and the mock ticket provider (there is
-// no AtlassianJiraProvider yet — Phase 4.3's stretch job), are a single
-// dev-config-wide value for now, not per-org — Phase 4.5's Organization
-// Service integration config (Slack webhook URL, ticket_provider, Jira
-// project/token) is what makes this per-tenant; wiring that in only
-// changes where DispatchUseCase reads its config from and which
-// ticketprovider.Provider main.go constructs, not the dispatch logic
-// itself.
+// Phase 4.5 makes the Slack webhook and ticket provider per-org:
+// DispatchUseCase now reads each row's org's own org.integration_configs
+// (via orgs.Client, against Organization Service's internal API) and
+// only falls back to this service's dev-config-wide SlackWebhookURL when
+// an org hasn't set its own. cfg.SMTPHost/Port/From remain single
+// dev-config-wide values — Phase 4.5's scope (per
+// docs/ROADMAP.md) was Slack webhook + ticket_provider + Jira
+// project/token, not SMTP. ticketProviders is a registry keyed by
+// ticket_provider value; only "mock_jira" has an entry — an org
+// configured for "atlassian_jira" gets a clear "not implemented yet"
+// dispatch error (see usecase.resolveTicketProvider) rather than
+// silently using the wrong provider, since Phase 4.3's real Jira
+// provider is still an unbuilt stretch job. Phase 4.5 also finally builds
+// POST /orgs/{orgId}/integrations/test (handler.go's TestIntegration),
+// deferred since Phase 4.2 for lack of anything real to test against —
+// it now has one, via the same orgs.Client/ticketProviders resolution
+// DispatchUseCase itself uses.
 package main
 
 import (
@@ -37,8 +44,10 @@ import (
 	emailsmtp "github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/email/smtp"
 	eventskafka "github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/events/kafka"
 	meetingsclient "github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/meetings/http"
+	orgsclient "github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/orgs/http"
 	notificationpg "github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/repository/postgres"
 	slackhttp "github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/slack/http"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/ticketprovider"
 	mockjira "github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/ticketprovider/mock"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/usecase"
 	usersclient "github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/users/http"
@@ -59,6 +68,7 @@ type serviceConfig struct {
 	MeetingServiceURL    string   `json:"meeting_service_url"`
 	UserServiceURL       string   `json:"user_service_url"`
 	ActionItemServiceURL string   `json:"action_item_service_url"`
+	OrgServiceURL        string   `json:"org_service_url"`
 	InternalServiceToken string   `json:"internal_service_token"`
 	KafkaBrokers         []string `json:"kafka_brokers"`
 	SlackWebhookURL      string   `json:"slack_webhook_url"`
@@ -89,6 +99,7 @@ func main() {
 	meetingsC := meetingsclient.NewClient(cfg.MeetingServiceURL, cfg.InternalServiceToken)
 	usersC := usersclient.NewClient(cfg.UserServiceURL, cfg.InternalServiceToken)
 	actionItemsC := actionitemsclient.NewClient(cfg.ActionItemServiceURL, cfg.InternalServiceToken)
+	orgsC := orgsclient.NewClient(cfg.OrgServiceURL, cfg.InternalServiceToken)
 	slackSender := slackhttp.New()
 	emailSender := emailsmtp.New(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPFrom)
 
@@ -98,18 +109,26 @@ func main() {
 	repo := notificationpg.NewOutboxRepository(pool)
 	jiraRepo := notificationpg.NewJiraRepository(pool)
 	reminderRepo := notificationpg.NewReminderRepository(pool)
-	ticketProvider := mockjira.New(jiraRepo, cfg.PublicAPIBaseURL)
+	// ticketProviders is keyed by org.integration_configs.ticket_provider
+	// values — only mockjira.ProviderName ("mock_jira") has an entry as of
+	// this phase; see DispatchUseCase.ticketProviderFor's doc comment for
+	// what happens when an org is configured for anything else.
+	ticketProviders := map[string]ticketprovider.Provider{
+		mockjira.ProviderName: mockjira.New(jiraRepo, cfg.PublicAPIBaseURL),
+	}
 
 	enqueueSummary := usecase.NewEnqueueSummaryNotificationsUseCase(meetingsC, usersC, repo, log)
 	enqueueDigest := usecase.NewEnqueueActionItemDigestUseCase(meetingsC, repo)
 	enqueueJiraTicket := usecase.NewEnqueueJiraTicketUseCase(repo)
 	enqueueReminder := usecase.NewEnqueueReminderUseCase(repo)
 	publishDueReminders := usecase.NewPublishDueRemindersUseCase(reminderRepo, publisher, log)
-	dispatch := usecase.NewDispatchUseCase(repo, jiraRepo, slackSender, emailSender, ticketProvider, actionItemsC, publisher, log, cfg.SlackWebhookURL)
+	dispatch := usecase.NewDispatchUseCase(repo, jiraRepo, slackSender, emailSender, ticketProviders, actionItemsC, orgsC, publisher, log, cfg.SlackWebhookURL)
+	testIntegration := usecase.NewTestIntegrationUseCase(orgsC, slackSender, emailSender, ticketProviders, cfg.SlackWebhookURL, log)
 
 	handler := NewHandler(
 		usecase.NewGetMockBoardUseCase(jiraRepo),
 		usecase.NewTransitionMockIssueUseCase(jiraRepo, actionItemsC, log),
+		testIntegration,
 		cfg.DemoOrgID,
 	)
 

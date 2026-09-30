@@ -16,12 +16,22 @@ import (
 )
 
 type Handler struct {
-	createOrg *usecase.CreateOrgUseCase
-	getOrg    *usecase.GetOrgUseCase
+	createOrg               *usecase.CreateOrgUseCase
+	getOrg                  *usecase.GetOrgUseCase
+	updateIntegrationConfig *usecase.UpdateIntegrationConfigUseCase
+	getIntegrationConfig    *usecase.GetIntegrationConfigUseCase
 }
 
-func NewHandler(createOrg *usecase.CreateOrgUseCase, getOrg *usecase.GetOrgUseCase) *Handler {
-	return &Handler{createOrg: createOrg, getOrg: getOrg}
+func NewHandler(
+	createOrg *usecase.CreateOrgUseCase,
+	getOrg *usecase.GetOrgUseCase,
+	updateIntegrationConfig *usecase.UpdateIntegrationConfigUseCase,
+	getIntegrationConfig *usecase.GetIntegrationConfigUseCase,
+) *Handler {
+	return &Handler{
+		createOrg: createOrg, getOrg: getOrg,
+		updateIntegrationConfig: updateIntegrationConfig, getIntegrationConfig: getIntegrationConfig,
+	}
 }
 
 // fail writes the shared {"error": {...}} envelope via apperr.Write —
@@ -81,4 +91,53 @@ func toOrgResponse(o *entity.Organization) entity.OrgResponse {
 		Status:    o.Status,
 		CreatedAt: o.CreatedAt.Format(time.RFC3339),
 	}
+}
+
+func toIntegrationConfigResponse(c *entity.IntegrationConfig) entity.IntegrationConfigResponse {
+	return entity.IntegrationConfigResponse{
+		SlackWebhookURL: c.SlackWebhookURL, TicketProvider: c.TicketProvider,
+		JiraBaseURL: c.JiraBaseURL, JiraProjectKey: c.JiraProjectKey,
+		JiraAPITokenSecretRef: c.JiraAPITokenSecretRef,
+	}
+}
+
+// UpdateOrgSettings serves PATCH /orgs/{orgId}/settings — owner/admin-only
+// (see RegisterRoutes' requireOwnerOrAdmin gate, the per-service half of
+// the defense-in-depth the gateway's own RequireRole is the other half
+// of), and re-checks the caller's own org matches the path the same way
+// GetOrg does, since role alone doesn't establish which org the caller
+// belongs to.
+func (h *Handler) UpdateOrgSettings(w http.ResponseWriter, r *http.Request) {
+	orgID := r.PathValue("orgId")
+	if callerOrg := reqctx.OrgID(r.Context()); callerOrg != "" && callerOrg != orgID {
+		fail(w, r, apperr.Forbidden("cannot access another organization"))
+		return
+	}
+
+	var req entity.UpdateIntegrationConfigRequest
+	if err := httpserver.DecodeJSON(r, &req); err != nil {
+		fail(w, r, err)
+		return
+	}
+	config, err := h.updateIntegrationConfig.UpdateIntegrationConfig(r.Context(), orgID, entity.UpdateIntegrationConfigInput(req))
+	if err != nil {
+		fail(w, r, err)
+		return
+	}
+	httpserver.JSON(w, http.StatusOK, toIntegrationConfigResponse(config))
+}
+
+// GetIntegrationConfigInternal serves
+// GET /internal/orgs/{orgId}/integration-config — Notification Service's
+// own read, at dispatch time (which Slack webhook URL and ticket provider
+// an org is configured for). No org-match re-check here: the caller is
+// already token-authenticated by RequireInternalToken, the same pattern
+// every other /internal/* route in this repo uses.
+func (h *Handler) GetIntegrationConfigInternal(w http.ResponseWriter, r *http.Request) {
+	config, err := h.getIntegrationConfig.GetIntegrationConfig(r.Context(), r.PathValue("orgId"))
+	if err != nil {
+		fail(w, r, err)
+		return
+	}
+	httpserver.JSON(w, http.StatusOK, toIntegrationConfigResponse(config))
 }

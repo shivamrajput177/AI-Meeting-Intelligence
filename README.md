@@ -21,7 +21,7 @@ hand-written REST/JSON; there's no gRPC or protobuf codegen anywhere in
 this design (see `docs/architecture/microservices.md` §"Internal
 Communication" for why).
 
-## Status: Phase 1 (MVP) implemented, Phase 2 (2.1–2.7) fully implemented, Phase 3 (3.1–3.5) fully implemented, Phase 4.1, 4.2 & 4.4 implemented (4.3 — real Jira — is an explicit stretch item, not yet built)
+## Status: Phase 1 (MVP) implemented, Phase 2 (2.1–2.7) fully implemented, Phase 3 (3.1–3.5) fully implemented, Phase 4.1, 4.2, 4.4 & 4.5 implemented (4.3 — real Jira — is an explicit stretch item, not yet built)
 
 Auth, User, Organization, and Meeting services, the API Gateway, and a
 React web app are built and running — signup, login, JWT refresh/rotation,
@@ -240,10 +240,10 @@ not a real ticketing system's guarantee); the write-back onto the action
 item (issue key after creation, status after a board transition) is
 best-effort — logged on failure, never rolled back, so a down Action
 Item Service leaves the mock board and the action item's own state
-briefly out of sync rather than losing the ticket/transition itself; and
-the Slack webhook URL/SMTP settings/ticket provider are still a single
-dev-config-wide value, not per-org — Phase 4.5's Organization Service
-integration config is what makes any of this per-tenant.
+briefly out of sync rather than losing the ticket/transition itself; and,
+as of this phase, the Slack webhook URL/ticket provider were still a
+single dev-config-wide value, not per-org — Phase 4.5, below, is what
+makes those per-tenant.
 
 Phase 4.4 adds the reminder scheduler, skipping Phase 4.3 (a real
 `AtlassianJiraProvider`) since the roadmap names it an explicit
@@ -274,7 +274,40 @@ mark-sent update aren't atomic with each other — a second interview-relevant
 distributed pattern (advisory-lock leader election vs. SKIP LOCKED) built
 for real, not just described, in the same service.
 
-**Not live-verified in this sandbox, for 2.3 through 4.4**: the egress
+Phase 4.5 gives Organization Service its first real CRUD beyond
+create/read: a new `org.integration_configs` row per org (inserted
+alongside the existing `org.quotas` default row inside `OrgRepository.Create`'s
+own transaction — the same "give every org a default row at creation"
+pattern, just extended to a second table), covering `slack_webhook_url`,
+`ticket_provider` (`mock_jira`/`atlassian_jira`, `CHECK`-constrained,
+defaulting to `mock_jira`), and Jira `base_url`/`project_key`/an
+`api_token_secret_ref` (a reference string, never a plaintext token — no
+secret store is actually wired up yet, so this is a schema-level
+commitment to the right shape, not a working secrets pipeline). `PATCH
+/orgs/{orgId}/settings` (owner/admin, both the gateway's `RequireRole`
+and this service's own `requireOwnerOrAdmin` re-check it) updates any
+subset of those fields via the same `COALESCE($n, column)` partial-update
+pattern this codebase already uses elsewhere; a new
+`GET /internal/orgs/{orgId}/integration-config` lets Notification Service
+read it back. `DispatchUseCase` now resolves each row's own org config at
+send time — its own configured Slack webhook wins when set, falling back
+to this service's dev-config-wide default otherwise; its configured
+`ticket_provider` selects a `ticketprovider.Provider` out of a small
+registry (only `mock_jira` has a real entry — an org configured for
+`atlassian_jira` gets a clear "not implemented yet" dispatch error
+instead of silently running against the wrong provider, the same honest
+stance Phase 4.2 already took). The same per-org resolution now also
+backs `POST /orgs/{orgId}/integrations/test` (owner/admin), deferred
+since Phase 4.2 for lack of anything real to test against: it fires one
+real Slack/email/Jira call synchronously and returns pass/fail directly,
+deliberately bypassing the outbox — the point of a "test my integration"
+action is immediate feedback, not a durably retried background send.
+SMTP settings remain a single dev-config-wide value; Phase 4.5's actual
+scope (per `docs/ROADMAP.md`) was Slack webhook + ticket provider + Jira
+project/token, not SMTP, so that gap is left exactly where it was rather
+than solved speculatively.
+
+**Not live-verified in this sandbox, for 2.3 through 4.5**: the egress
 proxy here blocks all container-registry traffic, so the Kafka broker, a
 real whisper.cpp server, and a real Ollama server have never actually
 been run — the business logic (including the chunking, owner-matching,
@@ -292,10 +325,10 @@ section for a related, now-fixed finding: every repository query in this
 project filters by `org_id` explicitly rather than relying on Postgres
 RLS, which turned out to be silently inert (every service connects as
 the table owner/superuser, which RLS never applies to). **Phase 2 and
-Phase 3 (3.1–3.5) are now fully implemented, and Phase 4.1, 4.2, and 4.4
-(Notification Service core + mock Jira ticketing + reminder scheduler)
-are in** — Phase 4.3 (real Jira) stays an explicit, optional stretch;
-Phase 4.5 (org-level integration config) is next; giving each service's
+Phase 3 (3.1–3.5) are now fully implemented, and Phase 4.1, 4.2, 4.4, and
+4.5 (Notification Service core + mock Jira ticketing + reminder scheduler
++ org-level integration config) are in** — Phase 4.3 (real Jira) stays
+the one explicit, optional stretch left in Phase 4; giving each service's
 DB connection its own non-superuser role so RLS becomes real
 defense-in-depth again remains an open follow-up, not tied to any one
 phase.
@@ -568,6 +601,26 @@ curl -X DELETE {{base_url}}/orgs/{{org_id}}/users/{{user_id}} \
 ```bash
 curl {{base_url}}/orgs/{{org_id}} \
   -H "Authorization: Bearer {{access_token}}"
+```
+
+**Update integration settings** (Phase 4.5, `owner`/`admin` only) —
+partial update, any subset of these fields:
+```bash
+curl -X PATCH {{base_url}}/orgs/{{org_id}}/settings \
+  -H "Authorization: Bearer {{access_token}}" \
+  -H "Content-Type: application/json" \
+  -d '{"slackWebhookUrl": "https://hooks.slack.com/services/...", "ticketProvider": "mock_jira"}'
+```
+
+**Test an integration** (Phase 4.5, `owner`/`admin` only) — fires one real
+Slack/email/Jira call synchronously against the org's current settings
+above and returns pass/fail directly (`to` is required, and only used,
+when `"channel": "email"`):
+```bash
+curl -X POST {{base_url}}/orgs/{{org_id}}/integrations/test \
+  -H "Authorization: Bearer {{access_token}}" \
+  -H "Content-Type: application/json" \
+  -d '{"channel": "slack"}'
 ```
 
 #### Meetings (bearer token required)
@@ -876,6 +929,10 @@ curl -X PATCH "http://localhost:8086/internal/action-items/{{action_item_id}}?or
   -H "X-Internal-Token: dev-internal-token" \
   -H "Content-Type: application/json" \
   -d '{"jiraIssueKey": "DEMO-1"}'
+
+# Organization Service — used by Notification Service's DispatchUseCase/TestIntegrationUseCase (Phase 4.5) to resolve an org's own Slack webhook + ticket provider
+curl "http://localhost:8082/internal/orgs/{{org_id}}/integration-config" \
+  -H "X-Internal-Token: dev-internal-token"
 ```
 
 ### Configuration

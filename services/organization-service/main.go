@@ -42,9 +42,12 @@ func main() {
 	defer pool.Close()
 
 	repo := orgpg.NewOrgRepository(pool)
+	integrationConfigRepo := orgpg.NewIntegrationConfigRepository(pool)
 	handler := NewHandler(
 		usecase.NewCreateOrgUseCase(repo),
 		usecase.NewGetOrgUseCase(repo),
+		usecase.NewUpdateIntegrationConfigUseCase(integrationConfigRepo),
+		usecase.NewGetIntegrationConfigUseCase(integrationConfigRepo),
 	)
 
 	srv := httpserver.New("organization-service", log)

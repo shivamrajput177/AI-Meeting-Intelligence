@@ -16,13 +16,17 @@ import (
 )
 
 type Handler struct {
-	getBoard   *usecase.GetMockBoardUseCase
-	transition *usecase.TransitionMockIssueUseCase
-	demoOrgID  string
+	getBoard        *usecase.GetMockBoardUseCase
+	transition      *usecase.TransitionMockIssueUseCase
+	testIntegration *usecase.TestIntegrationUseCase
+	demoOrgID       string
 }
 
-func NewHandler(getBoard *usecase.GetMockBoardUseCase, transition *usecase.TransitionMockIssueUseCase, demoOrgID string) *Handler {
-	return &Handler{getBoard: getBoard, transition: transition, demoOrgID: demoOrgID}
+func NewHandler(
+	getBoard *usecase.GetMockBoardUseCase, transition *usecase.TransitionMockIssueUseCase,
+	testIntegration *usecase.TestIntegrationUseCase, demoOrgID string,
+) *Handler {
+	return &Handler{getBoard: getBoard, transition: transition, testIntegration: testIntegration, demoOrgID: demoOrgID}
 }
 
 func toMockIssueResponse(it entity.MockJiraIssue) entity.MockJiraIssueResponse {
@@ -82,6 +86,26 @@ func (h *Handler) TransitionMockIssue(w http.ResponseWriter, r *http.Request) er
 		return err
 	}
 	httpserver.NoContent(w)
+	return nil
+}
+
+// TestIntegration serves POST /orgs/{orgId}/integrations/test —
+// owner/admin-only (see RegisterRoutes' requireOwnerOrAdmin gate, the
+// per-service half of the defense-in-depth the gateway's own RequireRole
+// is the other half of, same as organization-service's UpdateOrgSettings).
+func (h *Handler) TestIntegration(w http.ResponseWriter, r *http.Request) error {
+	orgID := r.PathValue("orgId")
+	if err := requireSameOrg(r.Context(), orgID); err != nil {
+		return err
+	}
+	var req entity.TestIntegrationRequest
+	if err := httpserver.DecodeJSON(r, &req); err != nil {
+		return err
+	}
+	if err := h.testIntegration.TestIntegration(r.Context(), orgID, req.Channel, req.To); err != nil {
+		return err
+	}
+	httpserver.JSON(w, http.StatusOK, entity.TestIntegrationResponse{Channel: req.Channel, OK: true})
 	return nil
 }
 

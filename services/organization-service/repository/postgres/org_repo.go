@@ -53,6 +53,16 @@ func (r *OrgRepository) Create(ctx context.Context, org *entity.Organization) er
 		return err
 	}
 
+	// Same reasoning as the quotas row above, for Phase 4.5's
+	// org.integration_configs: every org gets one at creation (default
+	// ticket_provider, everything else unset), so
+	// IntegrationConfigRepository.GetIntegrationConfig never has to handle
+	// a "row doesn't exist yet" case — PATCH /orgs/{orgId}/settings is
+	// always updating an existing row, never creating the first one.
+	if _, err := tx.Exec(ctx, `INSERT INTO org.integration_configs (org_id) VALUES ($1)`, org.ID); err != nil {
+		return err
+	}
+
 	return tx.Commit(ctx)
 }
 

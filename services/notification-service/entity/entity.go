@@ -225,3 +225,32 @@ type UpdateActionItemInternalRequest struct {
 	Status       *string `json:"status,omitempty"`
 	JiraIssueKey *string `json:"jiraIssueKey,omitempty"`
 }
+
+// --- orgs/*.go: what Client.GetIntegrationConfig returns, and the wire
+// shape it decodes off the network. OrgIntegrationConfigWireResponse only
+// carries the fields this service actually reads (slackWebhookUrl,
+// ticketProvider) even though orgsvc's real response has more (Jira
+// fields nothing here uses yet) — unread JSON fields are simply ignored
+// by encoding/json. ---
+
+type OrgIntegrationConfigWireResponse struct {
+	SlackWebhookURL *string `json:"slackWebhookUrl,omitempty"`
+	TicketProvider  string  `json:"ticketProvider"`
+}
+
+// --- handler.go: POST /orgs/{orgId}/integrations/test's request/response
+// shapes — see docs/architecture/api-spec.md §Integrations ("Fire a test
+// Slack/email/Jira call"). Channel is one of the Channel* consts above;
+// To is required only when Channel is ChannelEmail, since nothing else on
+// this request (or on org.integration_configs) names an email recipient
+// to test against. ---
+
+type TestIntegrationRequest struct {
+	Channel string  `json:"channel"`
+	To      *string `json:"to,omitempty"`
+}
+
+type TestIntegrationResponse struct {
+	Channel string `json:"channel"`
+	OK      bool   `json:"ok"`
+}

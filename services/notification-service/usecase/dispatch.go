@@ -9,6 +9,7 @@ import (
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/email"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/entity"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/events"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/orgs"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/repository"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/slack"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/ticketprovider"
@@ -24,19 +25,31 @@ type DispatchUseCase struct {
 	jiraRepo        repository.JiraRepository
 	slack           slack.Sender
 	email           email.Sender
-	ticketProvider  ticketprovider.Provider
+	ticketProviders map[string]ticketprovider.Provider
 	actionItems     actionitems.Client
+	orgs            orgs.Client
 	publisher       events.Publisher
 	log             *logger.Logger
-	slackWebhookURL string
+	// defaultSlackWebhookURL is this service's dev-config-wide fallback —
+	// see slackWebhookURL's own doc comment for when an org's own
+	// configured webhook (if any) takes precedence over it.
+	defaultSlackWebhookURL string
 }
 
+// NewDispatchUseCase's ticketProviders is keyed by
+// org.integration_configs.ticket_provider values (e.g.
+// mockjira.ProviderName) — an org whose configured provider has no entry
+// here (as of this phase, only "mock_jira" does; "atlassian_jira" is
+// Phase 4.3's still-unbuilt stretch job) gets a clear "not implemented
+// yet" dispatch error rather than silently falling back to the wrong
+// provider.
 func NewDispatchUseCase(
 	repo repository.Repository, jiraRepo repository.JiraRepository,
-	slackSender slack.Sender, emailSender email.Sender, ticketProvider ticketprovider.Provider, actionItems actionitems.Client,
+	slackSender slack.Sender, emailSender email.Sender, ticketProviders map[string]ticketprovider.Provider,
+	actionItems actionitems.Client, orgsClient orgs.Client,
 	publisher events.Publisher, log *logger.Logger, slackWebhookURL string,
 ) *DispatchUseCase {
-	return &DispatchUseCase{repo, jiraRepo, slackSender, emailSender, ticketProvider, actionItems, publisher, log, slackWebhookURL}
+	return &DispatchUseCase{repo, jiraRepo, slackSender, emailSender, ticketProviders, actionItems, orgsClient, publisher, log, slackWebhookURL}
 }
 
 // DispatchBatch claims up to batchSize eligible rows and attempts each —
@@ -91,7 +104,7 @@ func (uc *DispatchUseCase) send(ctx context.Context, row entity.OutboxRow) error
 		if err := json.Unmarshal(row.Payload, &p); err != nil {
 			return fmt.Errorf("decode slack payload: %w", err)
 		}
-		return uc.slack.Send(ctx, uc.slackWebhookURL, p.Text)
+		return uc.slack.Send(ctx, resolveSlackWebhookURL(ctx, uc.orgs, row.OrgID, uc.defaultSlackWebhookURL, uc.log), p.Text)
 	case entity.ChannelEmail:
 		var p entity.EmailPayload
 		if err := json.Unmarshal(row.Payload, &p); err != nil {
@@ -103,7 +116,11 @@ func (uc *DispatchUseCase) send(ctx context.Context, row entity.OutboxRow) error
 		if err := json.Unmarshal(row.Payload, &p); err != nil {
 			return fmt.Errorf("decode jira payload: %w", err)
 		}
-		ref, err := uc.ticketProvider.CreateTicket(ctx, row.OrgID, p.ActionItemID, p.Title)
+		provider, err := resolveTicketProvider(ctx, uc.orgs, row.OrgID, uc.ticketProviders)
+		if err != nil {
+			return err
+		}
+		ref, err := provider.CreateTicket(ctx, row.OrgID, p.ActionItemID, p.Title)
 		if err != nil {
 			return fmt.Errorf("create ticket: %w", err)
 		}

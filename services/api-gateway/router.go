@@ -90,7 +90,10 @@ func Register(mux *http.ServeMux, urls ServiceURLs, jwtSecret []byte, rdb *redis
 
 	protect("/api/v1/orgs", urls.Org)
 	protect("/api/v1/orgs/{orgId}", urls.Org)
-	protect("/api/v1/orgs/{orgId}/settings", urls.Org)
+	// "owner, admin" per docs/architecture/api-spec.md's Organizations
+	// table — the per-service half of this check is organization-service's
+	// own routes.go requireOwnerOrAdmin re-check on the same route.
+	protectRole("PATCH /api/v1/orgs/{orgId}/settings", urls.Org, "owner", "admin")
 	protect("/api/v1/orgs/{orgId}/usage", urls.Org)
 
 	protect("/api/v1/meetings", urls.Meeting)
@@ -134,4 +137,9 @@ func Register(mux *http.ServeMux, urls ServiceURLs, jwtSecret []byte, rdb *redis
 	// requireSameOrg (see its handler.go).
 	protect("/api/v1/orgs/{orgId}/mock-jira/board", urls.Notification)
 	protect("/api/v1/orgs/{orgId}/mock-jira/issues/{issueKey}", urls.Notification)
+
+	// "owner, admin" per docs/architecture/api-spec.md's Integrations
+	// table — the per-service half of this check is notificationsvc's own
+	// routes.go requireOwnerOrAdmin re-check on the same route.
+	protectRole("POST /api/v1/orgs/{orgId}/integrations/test", urls.Notification, "owner", "admin")
 }

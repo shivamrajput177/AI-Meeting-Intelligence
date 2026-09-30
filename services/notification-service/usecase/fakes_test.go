@@ -7,11 +7,12 @@ import (
 
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/entity"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/meetings"
+	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/orgs"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/ticketprovider"
 )
 
 // fakeRepository, fakeJiraRepository, fakeMeetingsClient, fakeUsersClient,
-// fakeActionItemsClient, fakeSlackSender, fakeEmailSender,
+// fakeActionItemsClient, fakeOrgsClient, fakeSlackSender, fakeEmailSender,
 // fakeTicketProvider, and fakePublisher are in-memory stand-ins for the
 // real Postgres-/HTTP-backed implementations — this package's own tests
 // never touch a live Postgres or another service over HTTP.
@@ -144,6 +145,25 @@ type fakeTicketProvider struct {
 
 func (f *fakeTicketProvider) CreateTicket(context.Context, string, string, string) (ticketprovider.TicketRef, error) {
 	return f.ref, f.err
+}
+
+// fakeOrgsClient defaults to a config selecting "mock_jira" with no Slack
+// webhook override (the common case — most tests don't care about
+// per-org config and just want dispatch to fall back to whatever
+// slackWebhookURL/ticketProviders newDispatchUseCase was given).
+type fakeOrgsClient struct {
+	config *orgs.IntegrationConfig
+	err    error
+}
+
+func (f *fakeOrgsClient) GetIntegrationConfig(context.Context, string) (*orgs.IntegrationConfig, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.config != nil {
+		return f.config, nil
+	}
+	return &orgs.IntegrationConfig{TicketProvider: "mock_jira"}, nil
 }
 
 type fakeMeetingsClient struct {

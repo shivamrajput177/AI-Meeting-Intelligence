@@ -5,6 +5,7 @@
   "meeting_service_url": "http://meeting-service:8080",
   "user_service_url": "http://user-service:8080",
   "action_item_service_url": "http://action-item-service:8080",
+  "org_service_url": "http://organization-service:8080",
   "internal_service_token": "dev-internal-token",
   "kafka_brokers": ["kafka:9092"],
   "slack_webhook_url": "https://hooks.slack.com/services/REPLACE/WITH/YOUR_REAL_WEBHOOK",

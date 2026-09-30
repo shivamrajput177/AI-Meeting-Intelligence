@@ -13,7 +13,13 @@ import (
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/ticketprovider"
 )
 
-const providerName = "mock_jira"
+// ProviderName is "mock_jira" — org.integration_configs.ticket_provider's
+// value that selects this provider (see
+// organization-service/entity.TicketProviderMockJira, duplicated there
+// rather than imported, same cross-service-boundary rule every other
+// shared constant in this repo follows). Exported so main.go can key its
+// ticketProviders registry map without re-typing the literal.
+const ProviderName = "mock_jira"
 
 type Provider struct {
 	repo         repository.JiraRepository
@@ -34,7 +40,7 @@ func (p *Provider) CreateTicket(ctx context.Context, orgID, actionItemID, title 
 		return ticketprovider.TicketRef{}, err
 	}
 	return ticketprovider.TicketRef{
-		Provider: providerName,
+		Provider: ProviderName,
 		Key:      issueKey,
 		URL:      p.boardBaseURL + "/orgs/" + orgID + "/mock-jira/board",
 	}, nil
