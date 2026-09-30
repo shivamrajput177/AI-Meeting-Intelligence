@@ -36,6 +36,15 @@ services:
       timeout: 5s
       retries: 10
 
+  # Phase 4.1's local SMTP stand-in — Notification Service sends real
+  # (unauthenticated) SMTP here, and every message is viewable at
+  # http://localhost:8025 instead of actually leaving the machine. No
+  # healthcheck: it starts instantly and nothing here needs to gate on it
+  # being "ready" the way Postgres/Kafka's slower startups do.
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    ports: ["1025:1025", "8025:8025"]
+
   minio:
     # MinIO pulled its own images entirely as of 2025-09-24: Docker Hub's
     # minio/minio 404s ("repository does not exist") and quay.io/minio/minio
@@ -319,6 +328,19 @@ services:
       meeting-service: { condition: service_started }
       ai-summary-service: { condition: service_started }
       action-item-service: { condition: service_started }
+
+  notification-service:
+    build: { context: .., dockerfile: deployments/Dockerfile, args: { SERVICE: notification-service } }
+    volumes:
+      - "./configs/docker/notification-service.json:/app/deployments/configs/notification-service.json:ro"
+    ports: ["8089:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      kafka-init: { condition: service_completed_successfully }
+      mailhog: { condition: service_started }
+      meeting-service: { condition: service_started }
+      user-service: { condition: service_started }
 
   api-gateway:
     build: { context: .., dockerfile: deployments/Dockerfile, args: { SERVICE: api-gateway } }

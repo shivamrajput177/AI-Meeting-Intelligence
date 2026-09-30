@@ -110,6 +110,25 @@ func (h *Handler) AcceptInvite(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// GetUserInternal is the same read as GetUser, reachable at
+// /internal/users/{userId} instead — this is what Notification Service
+// calls to resolve a meeting creator's email for a "summary ready" email
+// notification, with no gateway-set JWT/org context on a direct
+// service-to-service call. Same "internal caller states its own org_id"
+// pattern as every other /internal/* route in this repo.
+func (h *Handler) GetUserInternal(w http.ResponseWriter, r *http.Request) error {
+	orgID := r.URL.Query().Get("orgId")
+	if orgID == "" {
+		return apperr.BadRequest("orgId query parameter is required")
+	}
+	user, err := h.getUser.GetUser(r.Context(), orgID, r.PathValue("userId"))
+	if err != nil {
+		return err
+	}
+	httpserver.JSON(w, http.StatusOK, toUserResponse(user))
+	return nil
+}
+
 // --- routes reachable via the gateway ---
 
 func (h *Handler) GetMe(w http.ResponseWriter, r *http.Request) error {

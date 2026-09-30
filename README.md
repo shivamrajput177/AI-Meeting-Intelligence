@@ -21,7 +21,7 @@ hand-written REST/JSON; there's no gRPC or protobuf codegen anywhere in
 this design (see `docs/architecture/microservices.md` §"Internal
 Communication" for why).
 
-## Status: Phase 1 (MVP) implemented, Phase 2 (2.1–2.7) fully implemented, Phase 3 (3.1–3.5) fully implemented
+## Status: Phase 1 (MVP) implemented, Phase 2 (2.1–2.7) fully implemented, Phase 3 (3.1–3.5) fully implemented, Phase 4.1 implemented
 
 Auth, User, Organization, and Meeting services, the API Gateway, and a
 React web app are built and running — signup, login, JWT refresh/rotation,
@@ -182,7 +182,38 @@ delivery redelivering the same event double-counts that rollup — an
 accepted trade-off for a read model that's explicitly disposable and
 replayable, not a source of truth.
 
-**Not live-verified in this sandbox, for 2.3 through 3.5**: the egress
+Phase 4.1's Notification Service starts Phase 4 (Integrations &
+Automation): it consumes `summary.completed.v1` and
+`action-item.extracted.v1`, and turns each into a durable
+`notification.outbox` row (the **transactional outbox pattern** —
+docs/architecture/microservices.md §10) before ever touching a real
+external system. A separate poller goroutine (any replica can run it —
+`FOR UPDATE SKIP LOCKED` makes that safe with no leader election, unlike
+Phase 4.4's reminder scheduler) claims pending rows and dispatches them
+for real: a Slack Incoming Webhook POST for "meeting summarized"/"action
+items digest" messages, and a real SMTP send (to a local
+[Mailhog](https://github.com/mailhog/MailHog) instance, viewable at
+http://localhost:8025) for a "your summary is ready" email to the
+meeting's creator — resolved via two new internal endpoints, Meeting
+Service's existing `GET /internal/meetings/{id}` (title + `createdBy`) and
+a new `GET /internal/users/{id}` on User Service (email). A failed
+dispatch attempt retries with backoff (approximated from the row's
+`created_at` and `attempts` — see `repository/postgres`'s own doc comment
+on why a real implementation would want an extra `updated_at` column) up
+to 5 attempts, then gives up and publishes `notification.failed.v1` — both
+`notification.sent.v1` and `notification.failed.v1` were already
+documented in `kafka-topics.md` since earlier phases but never actually
+created or published until now, the same kind of gap Phase 2.6 found and
+fixed for `meeting.status-changed.v1`.
+
+This service has **no REST API of its own yet** — `POST
+/orgs/{orgId}/integrations/test` needs Phase 4.5's org-level integration
+config to have anything real to test against, and the mock Jira board's
+routes are Phase 4.2's job; today it's purely a Kafka consumer + poller,
+using a single dev-config-wide Slack webhook URL rather than a per-org one
+(also a Phase 4.5 follow-up).
+
+**Not live-verified in this sandbox, for 2.3 through 4.1**: the egress
 proxy here blocks all container-registry traffic, so the Kafka broker, a
 real whisper.cpp server, and a real Ollama server have never actually
 been run — the business logic (including the chunking, owner-matching,
@@ -200,10 +231,11 @@ section for a related, now-fixed finding: every repository query in this
 project filters by `org_id` explicitly rather than relying on Postgres
 RLS, which turned out to be silently inert (every service connects as
 the table owner/superuser, which RLS never applies to). **Phase 2 and
-Phase 3 (3.1–3.5) are now fully implemented** — Phase 4 (Integrations) is
-next; giving each service's DB connection its own non-superuser role so
-RLS becomes real defense-in-depth again remains an open follow-up, not
-tied to any one phase.
+Phase 3 (3.1–3.5) are now fully implemented, and Phase 4.1 (Notification
+Service — core) is in** — Phase 4.2 (mock Jira ticketing) is next; giving
+each service's DB connection its own non-superuser role so RLS becomes
+real defense-in-depth again remains an open follow-up, not tied to any
+one phase.
 
 The backend is a **Go workspace** (`go.work` at the repo root): `shared/`
 is its own Go module with no `internal/` in its path, so every
@@ -223,8 +255,9 @@ make up
 (equivalent to `docker compose -f deployments/docker-compose.yaml up --build`)
 
 This starts Postgres (with `pgvector` pre-installed for Phase 3), Redis,
-MinIO, Kafka, Ollama, whisper.cpp, all ten backend services, and the web
-app — including two one-shot init steps that make this a genuine
+MinIO, Kafka, Ollama, whisper.cpp, Mailhog, all eleven backend services,
+and the web app — including two one-shot init steps that make this a
+genuine
 single-command bring-up: `whisper-model-init` downloads whisper.cpp's
 `ggml-base.en.bin` (~140MB) into `deployments/whisper-models/` before
 `whisper` starts, and `ollama-model-init` pulls every model this stack's
@@ -244,11 +277,15 @@ and runs under Rosetta emulation — CPU transcription will be noticeably
 slower than on native x86_64, but `make up` itself will complete.
 
 **If you don't need the AI pipeline** (transcript/summary/action-item/
-search/RAG/analytics endpoints) for what you're testing right now, it's
-still fine to skip `whisper`, `whisper-model-init`, `ollama`,
-`ollama-model-init`, `transcription-service`, `ai-summary-service`,
-`action-item-service`, `search-service`, and `analytics-service` entirely
-and start faster by naming only the services you want:
+search/RAG/analytics endpoints, or the notifications they trigger) for
+what you're testing right now, it's still fine to skip `whisper`,
+`whisper-model-init`, `ollama`, `ollama-model-init`,
+`transcription-service`, `ai-summary-service`, `action-item-service`,
+`search-service`, `analytics-service`, `notification-service`, and
+`mailhog` entirely and start faster by naming only the services you want
+(nothing produces `summary.completed.v1`/`action-item.extracted.v1`
+without the AI pipeline running, so Notification Service would just sit
+idle waiting for events that never arrive):
 ```bash
 docker compose -f deployments/docker-compose.yaml up --build \
   postgres redis minio kafka kafka-init \
@@ -271,6 +308,9 @@ Reference below — just not Transcript/Summary/Action Items/Search. Then:
   everything else (`GET /users/me`, `POST /meetings`, …) — see "API
   Reference — curl / Postman" below for every endpoint.
 - **MinIO console**: http://localhost:9001 (`minioadmin` / `minioadmin`).
+- **Mailhog inbox**: http://localhost:8025 — every email Notification
+  Service sends (Phase 4.1's "summary ready" notification) lands here
+  instead of a real inbox.
 
 Password reset returns its token directly in the API response in this dev
 setup (`auth_dev_expose_reset_token: true` in
@@ -710,6 +750,10 @@ curl "http://localhost:8083/internal/meetings?orgId={{org_id}}" \
 
 # Action Item Service — used by Analytics Service's opened-rollup to see each item's owner
 curl "http://localhost:8086/internal/meetings/{{meeting_id}}/action-items?orgId={{org_id}}" \
+  -H "X-Internal-Token: dev-internal-token"
+
+# User Service — used by Notification Service to resolve a meeting creator's email
+curl "http://localhost:8081/internal/users/{{user_id}}?orgId={{org_id}}" \
   -H "X-Internal-Token: dev-internal-token"
 ```
 

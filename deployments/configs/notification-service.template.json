@@ -1,0 +1,13 @@
+{
+  "port": "8089",
+  "log_level": "info",
+  "database_url": "postgres://postgres:postgres@localhost:5432/meetingintel",
+  "meeting_service_url": "http://localhost:8083",
+  "user_service_url": "http://localhost:8081",
+  "internal_service_token": "dev-internal-token",
+  "kafka_brokers": ["localhost:29092"],
+  "slack_webhook_url": "https://hooks.slack.com/services/REPLACE/WITH/YOUR_REAL_WEBHOOK",
+  "smtp_host": "localhost",
+  "smtp_port": "1025",
+  "smtp_from": "notifications@meetingintel.local"
+}

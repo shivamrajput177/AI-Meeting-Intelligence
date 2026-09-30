@@ -24,6 +24,7 @@ func RegisterRoutes(mux *http.ServeMux, h *Handler, internalToken string) {
 	mux.Handle("POST /internal/users", middleware.RequireInternalToken(internalToken, httpserver.H(h.CreateUser)))
 	mux.Handle("GET /internal/users/lookup", middleware.RequireInternalToken(internalToken, httpserver.H(h.LookupByEmail)))
 	mux.Handle("POST /internal/invites/accept", middleware.RequireInternalToken(internalToken, httpserver.H(h.AcceptInvite)))
+	mux.Handle("GET /internal/users/{userId}", middleware.RequireInternalToken(internalToken, httpserver.H(h.GetUserInternal)))
 
 	mux.Handle("GET /users/me", httpserver.H(h.GetMe))
 	mux.Handle("PATCH /users/me", httpserver.H(h.UpdateMe))

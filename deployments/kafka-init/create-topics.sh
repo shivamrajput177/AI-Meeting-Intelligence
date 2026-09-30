@@ -6,12 +6,15 @@
 # exactly.
 #
 # Scope: only topics *produced* by a landed phase's service (Meeting,
-# Transcription, AI Summary, Action Item — Phase 2; Search — Phase 3; see
-# docs/ROADMAP.md) are created here. The catalog also documents topics
-# owned by later phases' services (Notification, Analytics, and
-# Auth/User/Org's own event stream) — those get created here once the
-# phase that builds their producer lands, the same way this file itself
-# didn't exist until Phase 2 needed it.
+# Transcription, AI Summary, Action Item — Phase 2; Search — Phase 3;
+# Notification — Phase 4.1; see docs/ROADMAP.md) are created here. The
+# catalog also documents topics owned by later phases' services
+# (Analytics's own consumer group needs no topics of its own to create,
+# and Auth/User/Org's own event stream, plus Notification's own
+# action-item.jira-requested.v1/action-item.reminder-due.v1 consumed
+# topics, land in Phase 4.2-4.5) — those get created here once the phase
+# that builds their producer lands, the same way this file itself didn't
+# exist until Phase 2 needed it.
 #
 # DLQ topics: per kafka-topics.md's own rule, only *.completed.v1,
 # *.extracted.v1, and *.status-changed.v1 topics get a .dlq companion —
@@ -54,5 +57,10 @@ create_topic action-item.status-changed.v1.dlq     6 $((30 * DAY))
 create_topic embedding.completed.v1               12 $((7 * DAY))
 create_topic embedding.completed.v1.dlq           12 $((7 * DAY))
 create_topic embedding.failed.v1                  12 $((7 * DAY))
+
+# Neither topic below gets a .dlq — a delivery audit/failure signal
+# already *is* the outcome, per this file's own header comment.
+create_topic notification.sent.v1                  6 $((7 * DAY))
+create_topic notification.failed.v1                6 $((7 * DAY))
 
 echo "kafka-init: topics created."
