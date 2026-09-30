@@ -8,7 +8,6 @@ package main
 import (
 	"net/http"
 
-	"github.com/shivamrajput177/ai-meeting-intelligence/shared/httpserver"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/middleware"
 )
 
@@ -20,18 +19,18 @@ import (
 // trust model this implies). /internal/* routes are gated by
 // internalToken instead, for direct service-to-service calls with no JWT.
 func RegisterRoutes(mux *http.ServeMux, h *Handler, internalToken string) {
-	mux.Handle("POST /meetings", httpserver.H(h.CreateUploadIntent))
-	mux.Handle("POST /meetings/{id}/complete-upload", httpserver.H(h.ConfirmUpload))
-	mux.Handle("GET /meetings/{id}", httpserver.H(h.GetMeeting))
-	mux.Handle("GET /meetings/{id}/status", httpserver.H(h.GetStatus))
-	mux.Handle("PATCH /meetings/{id}/status", httpserver.H(h.UpdateStatus))
-	mux.Handle("GET /meetings", httpserver.H(h.ListMeetings))
-	mux.Handle("DELETE /meetings/{id}", httpserver.H(h.DeleteMeeting))
+	mux.HandleFunc("POST /meetings", h.CreateUploadIntent)
+	mux.HandleFunc("POST /meetings/{id}/complete-upload", h.ConfirmUpload)
+	mux.HandleFunc("GET /meetings/{id}", h.GetMeeting)
+	mux.HandleFunc("GET /meetings/{id}/status", h.GetStatus)
+	mux.HandleFunc("PATCH /meetings/{id}/status", h.UpdateStatus)
+	mux.HandleFunc("GET /meetings", h.ListMeetings)
+	mux.HandleFunc("DELETE /meetings/{id}", h.DeleteMeeting)
 
 	mux.Handle("GET /internal/meetings/{id}/participants",
-		middleware.RequireInternalToken(internalToken, httpserver.H(h.GetParticipantsInternal)))
+		middleware.RequireInternalToken(internalToken, http.HandlerFunc(h.GetParticipantsInternal)))
 	mux.Handle("GET /internal/meetings/{id}",
-		middleware.RequireInternalToken(internalToken, httpserver.H(h.GetMeetingInternal)))
+		middleware.RequireInternalToken(internalToken, http.HandlerFunc(h.GetMeetingInternal)))
 	mux.Handle("GET /internal/meetings",
-		middleware.RequireInternalToken(internalToken, httpserver.H(h.ListMeetingsInternal)))
+		middleware.RequireInternalToken(internalToken, http.HandlerFunc(h.ListMeetingsInternal)))
 }

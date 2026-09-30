@@ -8,7 +8,6 @@ package main
 import (
 	"net/http"
 
-	"github.com/shivamrajput177/ai-meeting-intelligence/shared/httpserver"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/middleware"
 )
 
@@ -21,16 +20,16 @@ func requireOwnerOrAdmin(next http.Handler) http.Handler {
 }
 
 func RegisterRoutes(mux *http.ServeMux, h *Handler, internalToken string) {
-	mux.Handle("POST /internal/users", middleware.RequireInternalToken(internalToken, httpserver.H(h.CreateUser)))
-	mux.Handle("GET /internal/users/lookup", middleware.RequireInternalToken(internalToken, httpserver.H(h.LookupByEmail)))
-	mux.Handle("POST /internal/invites/accept", middleware.RequireInternalToken(internalToken, httpserver.H(h.AcceptInvite)))
-	mux.Handle("GET /internal/users/{userId}", middleware.RequireInternalToken(internalToken, httpserver.H(h.GetUserInternal)))
+	mux.Handle("POST /internal/users", middleware.RequireInternalToken(internalToken, http.HandlerFunc(h.CreateUser)))
+	mux.Handle("GET /internal/users/lookup", middleware.RequireInternalToken(internalToken, http.HandlerFunc(h.LookupByEmail)))
+	mux.Handle("POST /internal/invites/accept", middleware.RequireInternalToken(internalToken, http.HandlerFunc(h.AcceptInvite)))
+	mux.Handle("GET /internal/users/{userId}", middleware.RequireInternalToken(internalToken, http.HandlerFunc(h.GetUserInternal)))
 
-	mux.Handle("GET /users/me", httpserver.H(h.GetMe))
-	mux.Handle("PATCH /users/me", httpserver.H(h.UpdateMe))
-	mux.Handle("GET /orgs/{orgId}/users", httpserver.H(h.ListUsers))
-	mux.Handle("GET /orgs/{orgId}/users/{userId}", httpserver.H(h.GetUser))
-	mux.Handle("POST /orgs/{orgId}/invites", requireOwnerOrAdmin(httpserver.H(h.CreateInvite)))
-	mux.Handle("PATCH /orgs/{orgId}/users/{userId}/role", requireOwnerOrAdmin(httpserver.H(h.UpdateRole)))
-	mux.Handle("DELETE /orgs/{orgId}/users/{userId}", requireOwnerOrAdmin(httpserver.H(h.DeactivateUser)))
+	mux.HandleFunc("GET /users/me", h.GetMe)
+	mux.HandleFunc("PATCH /users/me", h.UpdateMe)
+	mux.HandleFunc("GET /orgs/{orgId}/users", h.ListUsers)
+	mux.HandleFunc("GET /orgs/{orgId}/users/{userId}", h.GetUser)
+	mux.Handle("POST /orgs/{orgId}/invites", requireOwnerOrAdmin(http.HandlerFunc(h.CreateInvite)))
+	mux.Handle("PATCH /orgs/{orgId}/users/{userId}/role", requireOwnerOrAdmin(http.HandlerFunc(h.UpdateRole)))
+	mux.Handle("DELETE /orgs/{orgId}/users/{userId}", requireOwnerOrAdmin(http.HandlerFunc(h.DeactivateUser)))
 }

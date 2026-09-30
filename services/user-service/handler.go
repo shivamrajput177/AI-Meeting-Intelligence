@@ -52,6 +52,13 @@ func NewHandler(
 	}
 }
 
+// fail writes the shared {"error": {...}} envelope via apperr.Write —
+// every handler method below calls this at each of its error returns
+// instead of writing one itself.
+func fail(w http.ResponseWriter, r *http.Request, err error) {
+	apperr.Write(w, r.Header.Get(reqctx.HeaderRequestID), err)
+}
+
 func toUserResponse(u *entity.User) entity.UserResponse {
 	return entity.UserResponse{
 		ID: u.ID, OrgID: u.OrgID, Email: u.Email, Name: u.Name,
@@ -62,52 +69,55 @@ func toUserResponse(u *entity.User) entity.UserResponse {
 
 // --- internal routes (called by Auth Service, not the gateway) ---
 
-func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) error {
+func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	var req entity.CreateUserRequest
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
-		return err
+		fail(w, r, err)
+		return
 	}
 	user, err := h.createUser.CreateUser(r.Context(), entity.CreateUserInput(req))
 	if err != nil {
-		return err
+		fail(w, r, err)
+		return
 	}
 	httpserver.JSON(w, http.StatusCreated, toUserResponse(user))
-	return nil
 }
 
-func (h *Handler) LookupByEmail(w http.ResponseWriter, r *http.Request) error {
+func (h *Handler) LookupByEmail(w http.ResponseWriter, r *http.Request) {
 	email := r.URL.Query().Get("email")
 	if email == "" {
-		return apperr.BadRequest("email query parameter is required")
+		fail(w, r, apperr.BadRequest("email query parameter is required"))
+		return
 	}
 	matches, err := h.lookupByEmail.LookupByEmail(r.Context(), email)
 	if err != nil {
-		return err
+		fail(w, r, err)
+		return
 	}
 	resp := entity.LookupResponse{}
 	for _, m := range matches {
 		resp.Matches = append(resp.Matches, entity.LookupMatch(m))
 	}
 	httpserver.JSON(w, http.StatusOK, resp)
-	return nil
 }
 
 // AcceptInvite is called by Auth Service's own AcceptInvite usecase — see
 // entity.InviteAcceptRequest's doc comment for why Auth Service, not the
 // gateway, fronts the public POST /invites/{token}/accept route.
-func (h *Handler) AcceptInvite(w http.ResponseWriter, r *http.Request) error {
+func (h *Handler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 	var req entity.InviteAcceptRequest
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
-		return err
+		fail(w, r, err)
+		return
 	}
 	user, err := h.acceptInvite.AcceptInvite(r.Context(), req.Token, req.Name)
 	if err != nil {
-		return err
+		fail(w, r, err)
+		return
 	}
 	httpserver.JSON(w, http.StatusCreated, entity.InviteAcceptResponse{
 		UserID: user.ID, OrgID: user.OrgID, Role: user.Role, Email: user.Email,
 	})
-	return nil
 }
 
 // GetUserInternal is the same read as GetUser, reachable at
@@ -116,61 +126,64 @@ func (h *Handler) AcceptInvite(w http.ResponseWriter, r *http.Request) error {
 // notification, with no gateway-set JWT/org context on a direct
 // service-to-service call. Same "internal caller states its own org_id"
 // pattern as every other /internal/* route in this repo.
-func (h *Handler) GetUserInternal(w http.ResponseWriter, r *http.Request) error {
+func (h *Handler) GetUserInternal(w http.ResponseWriter, r *http.Request) {
 	orgID := r.URL.Query().Get("orgId")
 	if orgID == "" {
-		return apperr.BadRequest("orgId query parameter is required")
+		fail(w, r, apperr.BadRequest("orgId query parameter is required"))
+		return
 	}
 	user, err := h.getUser.GetUser(r.Context(), orgID, r.PathValue("userId"))
 	if err != nil {
-		return err
+		fail(w, r, err)
+		return
 	}
 	httpserver.JSON(w, http.StatusOK, toUserResponse(user))
-	return nil
 }
 
 // --- routes reachable via the gateway ---
 
-func (h *Handler) GetMe(w http.ResponseWriter, r *http.Request) error {
+func (h *Handler) GetMe(w http.ResponseWriter, r *http.Request) {
 	orgID, userID := reqctx.OrgID(r.Context()), reqctx.UserID(r.Context())
 	user, err := h.getUser.GetUser(r.Context(), orgID, userID)
 	if err != nil {
-		return err
+		fail(w, r, err)
+		return
 	}
 	httpserver.JSON(w, http.StatusOK, toUserResponse(user))
-	return nil
 }
 
-func (h *Handler) UpdateMe(w http.ResponseWriter, r *http.Request) error {
+func (h *Handler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	var req entity.UpdateMeRequest
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
-		return err
+		fail(w, r, err)
+		return
 	}
 	orgID, userID := reqctx.OrgID(r.Context()), reqctx.UserID(r.Context())
 	user, err := h.updateProfile.UpdateProfile(r.Context(), entity.UpdateProfileInput{
 		OrgID: orgID, UserID: userID, Name: req.Name, AvatarURL: req.AvatarURL,
 	})
 	if err != nil {
-		return err
+		fail(w, r, err)
+		return
 	}
 	httpserver.JSON(w, http.StatusOK, toUserResponse(user))
-	return nil
 }
 
 // GetUser lets another service (or the gateway, for a member viewing a
 // teammate) fetch one user by id — see
 // docs/architecture/microservices.md §3 ("used internally too").
-func (h *Handler) GetUser(w http.ResponseWriter, r *http.Request) error {
+func (h *Handler) GetUser(w http.ResponseWriter, r *http.Request) {
 	orgID := r.PathValue("orgId")
 	if callerOrg := reqctx.OrgID(r.Context()); callerOrg != "" && callerOrg != orgID {
-		return apperr.Forbidden("cannot access another organization's users")
+		fail(w, r, apperr.Forbidden("cannot access another organization's users"))
+		return
 	}
 	user, err := h.getUser.GetUser(r.Context(), orgID, r.PathValue("userId"))
 	if err != nil {
-		return err
+		fail(w, r, err)
+		return
 	}
 	httpserver.JSON(w, http.StatusOK, toUserResponse(user))
-	return nil
 }
 
 // requireSameOrg is the same "a caller may only ever act on their own
@@ -187,10 +200,11 @@ func requireSameOrg(ctx context.Context, pathOrgID string) error {
 
 // ListUsers is reachable by any org member (see RegisterRoutes — no
 // RequireRole gate on this one, unlike the routes below it).
-func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) error {
+func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	orgID := r.PathValue("orgId")
 	if err := requireSameOrg(r.Context(), orgID); err != nil {
-		return err
+		fail(w, r, err)
+		return
 	}
 
 	q := r.URL.Query()
@@ -205,73 +219,78 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) error {
 
 	items, total, err := h.listUsers.ListUsers(r.Context(), orgID, entity.ListUsersFilter{Page: page, PageSize: pageSize})
 	if err != nil {
-		return err
+		fail(w, r, err)
+		return
 	}
 	resp := entity.ListUsersResponse{Page: page, PageSize: pageSize, Total: total}
 	for _, u := range items {
 		resp.Data = append(resp.Data, toUserResponse(u))
 	}
 	httpserver.JSON(w, http.StatusOK, resp)
-	return nil
 }
 
 // CreateInvite is owner/admin-only — see RegisterRoutes' RequireRole gate,
 // the per-service half of the defense-in-depth the gateway's own
 // RequireRole is the other half of (docs/architecture/observability-security.md §2).
-func (h *Handler) CreateInvite(w http.ResponseWriter, r *http.Request) error {
+func (h *Handler) CreateInvite(w http.ResponseWriter, r *http.Request) {
 	orgID := r.PathValue("orgId")
 	if err := requireSameOrg(r.Context(), orgID); err != nil {
-		return err
+		fail(w, r, err)
+		return
 	}
 
 	var req entity.CreateInviteRequest
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
-		return err
+		fail(w, r, err)
+		return
 	}
 	invite, devToken, err := h.createInvite.CreateInvite(r.Context(), entity.CreateInviteInput{
 		OrgID: orgID, InvitedBy: reqctx.UserID(r.Context()), Email: req.Email, Role: req.Role,
 	})
 	if err != nil {
-		return err
+		fail(w, r, err)
+		return
 	}
 	httpserver.JSON(w, http.StatusCreated, entity.InviteResponse{
 		ID: invite.ID, Email: invite.Email, Role: invite.Role,
 		ExpiresAt: invite.ExpiresAt.Format(time.RFC3339), DevToken: devToken,
 	})
-	return nil
 }
 
 // UpdateRole is owner/admin-only — see RegisterRoutes' RequireRole gate.
-func (h *Handler) UpdateRole(w http.ResponseWriter, r *http.Request) error {
+func (h *Handler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 	orgID := r.PathValue("orgId")
 	if err := requireSameOrg(r.Context(), orgID); err != nil {
-		return err
+		fail(w, r, err)
+		return
 	}
 
 	var req entity.UpdateRoleRequest
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
-		return err
+		fail(w, r, err)
+		return
 	}
 	user, err := h.updateRole.UpdateRole(r.Context(), entity.UpdateRoleInput{
 		OrgID: orgID, UserID: r.PathValue("userId"), Role: req.Role, CallerUserID: reqctx.UserID(r.Context()),
 	})
 	if err != nil {
-		return err
+		fail(w, r, err)
+		return
 	}
 	httpserver.JSON(w, http.StatusOK, toUserResponse(user))
-	return nil
 }
 
 // DeactivateUser is owner/admin-only — see RegisterRoutes' RequireRole gate.
-func (h *Handler) DeactivateUser(w http.ResponseWriter, r *http.Request) error {
+func (h *Handler) DeactivateUser(w http.ResponseWriter, r *http.Request) {
 	orgID := r.PathValue("orgId")
 	if err := requireSameOrg(r.Context(), orgID); err != nil {
-		return err
+		fail(w, r, err)
+		return
 	}
 
 	if _, err := h.deactivateUser.DeactivateUser(r.Context(), orgID, r.PathValue("userId"), reqctx.UserID(r.Context())); err != nil {
-		return err
+		fail(w, r, err)
+		return
 	}
 	httpserver.NoContent(w)
-	return nil
 }

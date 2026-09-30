@@ -24,27 +24,35 @@ func NewHandler(createOrg *usecase.CreateOrgUseCase, getOrg *usecase.GetOrgUseCa
 	return &Handler{createOrg: createOrg, getOrg: getOrg}
 }
 
+// fail writes the shared {"error": {...}} envelope via apperr.Write —
+// every handler method below calls this at each of its error returns
+// instead of writing one itself.
+func fail(w http.ResponseWriter, r *http.Request, err error) {
+	apperr.Write(w, r.Header.Get(reqctx.HeaderRequestID), err)
+}
+
 // CreateOrg is called internally by Auth Service during signup (see
 // docs/ROADMAP.md Phase 1 — there's no public "create a second org for an
 // existing user" flow yet).
-func (h *Handler) CreateOrg(w http.ResponseWriter, r *http.Request) error {
+func (h *Handler) CreateOrg(w http.ResponseWriter, r *http.Request) {
 	var req entity.CreateOrgRequest
 	if err := httpserver.DecodeJSON(r, &req); err != nil {
-		return err
+		fail(w, r, err)
+		return
 	}
 
 	org, err := h.createOrg.CreateOrg(r.Context(), entity.CreateOrgInput(req))
 	if err != nil {
-		return err
+		fail(w, r, err)
+		return
 	}
 	httpserver.JSON(w, http.StatusCreated, toOrgResponse(org))
-	return nil
 }
 
 // GetOrg is reachable both via the gateway (a member viewing their own
 // org) and directly from other services that need org metadata (e.g.
 // Notification Service reading integration config, in a later phase).
-func (h *Handler) GetOrg(w http.ResponseWriter, r *http.Request) error {
+func (h *Handler) GetOrg(w http.ResponseWriter, r *http.Request) {
 	orgID := r.PathValue("orgId")
 
 	// Gateway-forwarded requests carry the caller's org in context; a
@@ -52,15 +60,16 @@ func (h *Handler) GetOrg(w http.ResponseWriter, r *http.Request) error {
 	// (no reqctx org set) skip this check — they're already
 	// token-authenticated by RequireInternalToken.
 	if callerOrg := reqctx.OrgID(r.Context()); callerOrg != "" && callerOrg != orgID {
-		return apperr.Forbidden("cannot access another organization")
+		fail(w, r, apperr.Forbidden("cannot access another organization"))
+		return
 	}
 
 	org, err := h.getOrg.GetOrg(r.Context(), orgID)
 	if err != nil {
-		return err
+		fail(w, r, err)
+		return
 	}
 	httpserver.JSON(w, http.StatusOK, toOrgResponse(org))
-	return nil
 }
 
 func toOrgResponse(o *entity.Organization) entity.OrgResponse {

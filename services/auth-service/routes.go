@@ -7,8 +7,6 @@ package main
 
 import (
 	"net/http"
-
-	"github.com/shivamrajput177/ai-meeting-intelligence/shared/httpserver"
 )
 
 // RegisterRoutes mounts Auth Service's routes. All of them are public —
@@ -16,11 +14,11 @@ import (
 // a JWT — the API Gateway proxies /api/v1/auth/* without its JWT
 // middleware (see services/api-gateway/router.go).
 func RegisterRoutes(mux *http.ServeMux, h *Handler) {
-	mux.Handle("POST /auth/signup", httpserver.H(h.Signup))
-	mux.Handle("POST /auth/login", httpserver.H(h.Login))
-	mux.Handle("POST /auth/refresh", httpserver.H(h.Refresh))
-	mux.Handle("POST /auth/logout", httpserver.H(h.Logout))
-	mux.Handle("POST /auth/password/reset-request", httpserver.H(h.RequestPasswordReset))
-	mux.Handle("POST /auth/password/reset-confirm", httpserver.H(h.ConfirmPasswordReset))
-	mux.Handle("POST /invites/{token}/accept", httpserver.H(h.AcceptInvite))
+	mux.HandleFunc("POST /auth/signup", h.Signup)
+	mux.HandleFunc("POST /auth/login", h.Login)
+	mux.HandleFunc("POST /auth/refresh", h.Refresh)
+	mux.HandleFunc("POST /auth/logout", h.Logout)
+	mux.HandleFunc("POST /auth/password/reset-request", h.RequestPasswordReset)
+	mux.HandleFunc("POST /auth/password/reset-confirm", h.ConfirmPasswordReset)
+	mux.HandleFunc("POST /invites/{token}/accept", h.AcceptInvite)
 }
