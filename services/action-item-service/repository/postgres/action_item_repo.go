@@ -15,6 +15,7 @@ import (
 	"errors"
 	"strconv"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -47,8 +48,19 @@ func scanActionItem(row pgx.Row) (*entity.ActionItem, error) {
 	return &it, err
 }
 
+// reminderLeadHoursUTC is how far past midnight UTC on an action item's
+// due date its reminder fires — a fixed, documented default (a real
+// product would likely make this configurable per-org, a Phase 4.5-ish
+// follow-up, not built speculatively here).
+const reminderLeadHoursUTC = 9
+
 func (r *ActionItemRepository) ReplaceActionItems(ctx context.Context, orgID, meetingID string, items []*entity.ActionItem) error {
 	return dbx.WithTenantTx(ctx, r.pool, orgID, func(ctx context.Context, tx pgx.Tx) error {
+		// actionitem.reminders' ON DELETE CASCADE FK means deleting a
+		// meeting's action items here already deletes their reminders too
+		// — re-extraction (a summary regenerate) shouldn't leave stale
+		// reminders from a previous pass any more than it should leave
+		// stale action items.
 		if _, err := tx.Exec(ctx, `DELETE FROM actionitem.action_items WHERE meeting_id = $1 AND org_id = $2`, meetingID, orgID); err != nil {
 			return err
 		}
@@ -66,10 +78,23 @@ func (r *ActionItemRepository) ReplaceActionItems(ctx context.Context, orgID, me
 				it.ID, it.MeetingID, orgID, it.Description, it.Type, it.OwnerUserID, it.OwnerRawName, it.DueDate,
 				it.Status, it.Priority, it.ExtractedFromChunkID, it.Confidence,
 			)
+			// A reminder is only ever created here, for an item that has
+			// a due date — see docs/architecture/microservices.md §10's
+			// reminder scheduler design and this repo's own doc comment
+			// on reminderLeadHoursUTC. Nothing else in this codebase
+			// creates a reminders row yet (no REST endpoint for it is
+			// documented), so extraction time is the one real trigger.
+			if it.DueDate != nil {
+				batch.Queue(
+					`INSERT INTO actionitem.reminders (id, action_item_id, remind_at, channel)
+					 VALUES ($1, $2, $3::date::timestamptz + make_interval(hours => $4), 'slack')`,
+					uuid.NewString(), it.ID, it.DueDate, reminderLeadHoursUTC,
+				)
+			}
 		}
 		br := tx.SendBatch(ctx, batch)
 		defer func() { _ = br.Close() }()
-		for range items {
+		for i := 0; i < batch.Len(); i++ {
 			if _, err := br.Exec(); err != nil {
 				return err
 			}

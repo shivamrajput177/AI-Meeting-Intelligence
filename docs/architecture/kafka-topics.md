@@ -48,12 +48,13 @@ docs/ROADMAP.md's Phase 2 builds — and, since Phase 3.2,
 Phase 4.1, `notification.sent.v1`/`notification.failed.v1` (Notification
 Service — Analytics Service itself produces nothing, only consumes); and
 since Phase 4.2, `action-item.jira-requested.v1` (Action Item Service,
-consumed by Notification Service's mock/real ticket-creation dispatch).
-The rest of the catalog below is created once the phase that builds its
-producer (Auth/User/Org's own events, and Notification's own
-action-item.reminder-due.v1, Phase 4.4-4.5) lands, the same way this
-script itself didn't exist before Phase 2 needed
-it.
+consumed by Notification Service's mock/real ticket-creation dispatch);
+and since Phase 4.4, `action-item.reminder-due.v1` (Notification Service
+— both producer, its leader-elected scheduler, and consumer, its own
+dispatch pipeline; see entity.ActionItemReminderDueEvent's own doc
+comment). The rest of the catalog below is created once the phase that
+builds its producer (Auth/User/Org's own events, Phase 4.5) lands, the
+same way this script itself didn't exist before Phase 2 needed it.
 
 ## Topic Catalog
 

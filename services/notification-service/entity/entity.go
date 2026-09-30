@@ -66,6 +66,20 @@ type JiraPayload struct {
 	Title        string `json:"title"`
 }
 
+// DueReminder is this service's own internal model of one due
+// actionitem.reminders row (joined with actionitem.action_items for the
+// org_id/description/owner a Slack message needs) — see
+// repository.ReminderRepository's own doc comment on why this service
+// reads that table directly rather than over REST.
+type DueReminder struct {
+	ID           string
+	ActionItemID string
+	OrgID        string
+	Description  string
+	OwnerUserID  *string
+	Channel      string
+}
+
 // MockJiraIssue is this service's own internal model of one
 // notification.mock_jira_issues row — see
 // docs/architecture/deployment-demo-strategy.md §3.
@@ -138,6 +152,25 @@ type ActionItemJiraRequestedEvent struct {
 	MeetingID    string `json:"meetingId"`
 	OrgID        string `json:"orgId"`
 	Description  string `json:"description"`
+}
+
+// ActionItemReminderDueEvent is action-item.reminder-due.v1's payload —
+// unlike every other topic this service touches, both producer and
+// consumer are this same service (see
+// docs/architecture/kafka-topics.md's flow-4 diagram): the reminder
+// scheduler (PublishDueRemindersUseCase) publishes it, and this
+// service's own dispatch pipeline (EnqueueReminderUseCase) consumes it
+// to enqueue a Slack outbox row — the real reason for the round trip
+// through Kafka rather than a direct function call is exactly the same
+// as everywhere else in this codebase: Kafka is what makes "the
+// reminder was found due" durable independent of whether the process
+// that found it is still alive to dispatch it.
+type ActionItemReminderDueEvent struct {
+	ActionItemID string  `json:"actionItemId"`
+	OrgID        string  `json:"orgId"`
+	Description  string  `json:"description"`
+	OwnerUserID  *string `json:"ownerUserId,omitempty"`
+	Channel      string  `json:"channel"`
 }
 
 // --- Kafka payloads produced (see docs/architecture/kafka-topics.md's

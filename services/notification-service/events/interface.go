@@ -14,4 +14,5 @@ import (
 type Publisher interface {
 	PublishNotificationSent(ctx context.Context, event entity.NotificationSentEvent) error
 	PublishNotificationFailed(ctx context.Context, event entity.NotificationFailedEvent) error
+	PublishActionItemReminderDue(ctx context.Context, event entity.ActionItemReminderDueEvent) error
 }

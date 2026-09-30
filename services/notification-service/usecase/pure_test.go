@@ -41,6 +41,13 @@ func TestRenderActionItemDigestSlackText(t *testing.T) {
 	}
 }
 
+func TestRenderReminderSlackText(t *testing.T) {
+	got := renderReminderSlackText("Ship the API")
+	if !strings.Contains(got, "Ship the API") {
+		t.Errorf("renderReminderSlackText = %q, want it to mention the description", got)
+	}
+}
+
 func TestShouldGiveUp(t *testing.T) {
 	tests := []struct {
 		attempts int

@@ -1,10 +1,15 @@
 // Command notification-service is the Notification Service binary — see
 // docs/architecture/microservices.md §10.
 //
-// Phase 4.2 gives this service its first REST routes: the mock Jira
-// board (handler.go/routes.go). POST /orgs/{orgId}/integrations/test is
-// still deferred — it needs Phase 4.5's org-level integration config to
-// have anything real to test against.
+// Phase 4.2 gave this service its first REST routes: the mock Jira board
+// (handler.go/routes.go). POST /orgs/{orgId}/integrations/test is still
+// deferred — it needs Phase 4.5's org-level integration config to have
+// anything real to test against.
+//
+// Phase 4.4 adds the reminder scheduler (scheduler.go) — a leader-elected
+// goroutine, unlike every other loop here, since it's the one place two
+// replicas acting at once could double-publish the same reminder (see
+// scheduler.go's own doc comment).
 //
 // slackWebhookURL/SMTP settings, and the mock ticket provider (there is
 // no AtlassianJiraProvider yet — Phase 4.3's stretch job), are a single
@@ -92,11 +97,14 @@ func main() {
 
 	repo := notificationpg.NewOutboxRepository(pool)
 	jiraRepo := notificationpg.NewJiraRepository(pool)
+	reminderRepo := notificationpg.NewReminderRepository(pool)
 	ticketProvider := mockjira.New(jiraRepo, cfg.PublicAPIBaseURL)
 
 	enqueueSummary := usecase.NewEnqueueSummaryNotificationsUseCase(meetingsC, usersC, repo, log)
 	enqueueDigest := usecase.NewEnqueueActionItemDigestUseCase(meetingsC, repo)
 	enqueueJiraTicket := usecase.NewEnqueueJiraTicketUseCase(repo)
+	enqueueReminder := usecase.NewEnqueueReminderUseCase(repo)
+	publishDueReminders := usecase.NewPublishDueRemindersUseCase(reminderRepo, publisher, log)
 	dispatch := usecase.NewDispatchUseCase(repo, jiraRepo, slackSender, emailSender, ticketProvider, actionItemsC, publisher, log, cfg.SlackWebhookURL)
 
 	handler := NewHandler(
@@ -112,14 +120,18 @@ func main() {
 	summaryReader := kafkax.NewReader(cfg.KafkaBrokers, topicSummaryCompleted, consumeGroupID)
 	actionItemReader := kafkax.NewReader(cfg.KafkaBrokers, topicActionItemExtracted, consumeGroupID)
 	jiraRequestedReader := kafkax.NewReader(cfg.KafkaBrokers, topicActionItemJiraRequested, consumeGroupID)
+	reminderDueReader := kafkax.NewReader(cfg.KafkaBrokers, topicActionItemReminderDue, consumeGroupID)
 	defer func() { _ = summaryReader.Close() }()
 	defer func() { _ = actionItemReader.Close() }()
 	defer func() { _ = jiraRequestedReader.Close() }()
+	defer func() { _ = reminderDueReader.Close() }()
 
 	go ConsumeSummaryCompleted(ctx, summaryReader, enqueueSummary, log)
 	go ConsumeActionItemExtracted(ctx, actionItemReader, enqueueDigest, log)
 	go ConsumeActionItemJiraRequested(ctx, jiraRequestedReader, enqueueJiraTicket, log)
+	go ConsumeActionItemReminderDue(ctx, reminderDueReader, enqueueReminder, log)
 	go RunDispatchPoller(ctx, dispatch, log)
+	go RunReminderScheduler(ctx, publishDueReminders, log)
 
 	srv := httpserver.New("notification-service", log)
 	RegisterRoutes(srv.Mux, handler)

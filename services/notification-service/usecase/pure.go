@@ -69,3 +69,10 @@ func renderActionItemDigestSlackText(itemCount int, meetingTitle string) string 
 	}
 	return fmt.Sprintf("✅ %d %s extracted from %q.", itemCount, noun, meetingTitle)
 }
+
+// renderReminderSlackText is action-item.reminder-due.v1's message text —
+// see kafka-topics.md's flow-4 diagram's final step, `Timer->>Slack: post
+// reminder message`.
+func renderReminderSlackText(description string) string {
+	return fmt.Sprintf("⏰ Reminder: %q is due now.", description)
+}

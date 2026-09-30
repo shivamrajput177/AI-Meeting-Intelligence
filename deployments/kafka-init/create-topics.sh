@@ -8,13 +8,13 @@
 # Scope: only topics *produced* by a landed phase's service (Meeting,
 # Transcription, AI Summary, Action Item — Phase 2; Search — Phase 3;
 # Notification — Phase 4.1; Action Item's own jira-requested topic —
-# Phase 4.2; see docs/ROADMAP.md) are created here. The catalog also
-# documents topics owned by later phases' services (Analytics's own
-# consumer group needs no topics of its own to create, and Auth/User/Org's
-# own event stream, plus Notification's own
-# action-item.reminder-due.v1 consumed topic, land in Phase 4.4-4.5) —
-# those get created here once the phase that builds their producer lands,
-# the same way this file itself didn't exist until Phase 2 needed it.
+# Phase 4.2; Notification's own reminder-scheduler topic — Phase 4.4;
+# see docs/ROADMAP.md) are created here. The catalog also documents
+# topics owned by later phases' services (Analytics's own consumer group
+# needs no topics of its own to create, and Auth/User/Org's own event
+# stream lands in Phase 4.5) — those get created here once the phase that
+# builds their producer lands, the same way this file itself didn't exist
+# until Phase 2 needed it.
 #
 # DLQ topics: per kafka-topics.md's own rule, only *.completed.v1,
 # *.extracted.v1, and *.status-changed.v1 topics get a .dlq companion —
@@ -63,5 +63,10 @@ create_topic embedding.failed.v1                  12 $((7 * DAY))
 # already *is* the outcome, per this file's own header comment.
 create_topic notification.sent.v1                  6 $((7 * DAY))
 create_topic notification.failed.v1                6 $((7 * DAY))
+
+# Both producer and consumer are Notification Service itself (see
+# entity.ActionItemReminderDueEvent's own doc comment) — no .dlq, same
+# reasoning as every other non-completed/extracted/status-changed topic.
+create_topic action-item.reminder-due.v1            6 $((1 * DAY))
 
 echo "kafka-init: topics created."

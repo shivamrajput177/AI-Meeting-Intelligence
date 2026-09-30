@@ -200,9 +200,11 @@ func (f *fakeEmailSender) Send(_ context.Context, to, subject, body string) erro
 }
 
 type fakePublisher struct {
-	mu     sync.Mutex
-	sent   []entity.NotificationSentEvent
-	failed []entity.NotificationFailedEvent
+	mu           sync.Mutex
+	sent         []entity.NotificationSentEvent
+	failed       []entity.NotificationFailedEvent
+	remindersDue []entity.ActionItemReminderDueEvent
+	reminderErr  error
 }
 
 func (f *fakePublisher) PublishNotificationSent(_ context.Context, event entity.NotificationSentEvent) error {
@@ -216,6 +218,58 @@ func (f *fakePublisher) PublishNotificationFailed(_ context.Context, event entit
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.failed = append(f.failed, event)
+	return nil
+}
+
+func (f *fakePublisher) PublishActionItemReminderDue(_ context.Context, event entity.ActionItemReminderDueEvent) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.reminderErr != nil {
+		return f.reminderErr
+	}
+	f.remindersDue = append(f.remindersDue, event)
+	return nil
+}
+
+// fakeReminderRepository is an in-memory stand-in for
+// *postgres.ReminderRepository. lockAcquired defaults to true (the common
+// case in tests that don't care about leader election); set it false to
+// simulate another replica already holding the lock this tick.
+type fakeReminderRepository struct {
+	mu sync.Mutex
+
+	lockAcquired bool
+	lockCalled   bool
+
+	dueRows  []entity.DueReminder
+	claimErr error
+
+	sent []string
+}
+
+func newFakeReminderRepository() *fakeReminderRepository {
+	return &fakeReminderRepository{lockAcquired: true}
+}
+
+func (f *fakeReminderRepository) WithLeaderLock(ctx context.Context, fn func(ctx context.Context) error) error {
+	f.mu.Lock()
+	f.lockCalled = true
+	acquired := f.lockAcquired
+	f.mu.Unlock()
+	if !acquired {
+		return nil
+	}
+	return fn(ctx)
+}
+
+func (f *fakeReminderRepository) ClaimDueReminders(context.Context, int) ([]entity.DueReminder, error) {
+	return f.dueRows, f.claimErr
+}
+
+func (f *fakeReminderRepository) MarkReminderSent(_ context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sent = append(f.sent, id)
 	return nil
 }
 

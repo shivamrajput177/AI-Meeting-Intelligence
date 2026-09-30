@@ -17,19 +17,22 @@ import (
 )
 
 const (
-	TopicNotificationSent   = "notification.sent.v1"
-	TopicNotificationFailed = "notification.failed.v1"
+	TopicNotificationSent      = "notification.sent.v1"
+	TopicNotificationFailed    = "notification.failed.v1"
+	TopicActionItemReminderDue = "action-item.reminder-due.v1"
 )
 
 type Publisher struct {
-	notificationSent   *kafkago.Writer
-	notificationFailed *kafkago.Writer
+	notificationSent      *kafkago.Writer
+	notificationFailed    *kafkago.Writer
+	actionItemReminderDue *kafkago.Writer
 }
 
 func NewPublisher(brokers []string) *Publisher {
 	return &Publisher{
-		notificationSent:   kafkax.NewWriter(brokers, TopicNotificationSent),
-		notificationFailed: kafkax.NewWriter(brokers, TopicNotificationFailed),
+		notificationSent:      kafkax.NewWriter(brokers, TopicNotificationSent),
+		notificationFailed:    kafkax.NewWriter(brokers, TopicNotificationFailed),
+		actionItemReminderDue: kafkax.NewWriter(brokers, TopicActionItemReminderDue),
 	}
 }
 
@@ -37,13 +40,17 @@ func (p *Publisher) Close() error {
 	if err := p.notificationSent.Close(); err != nil {
 		return err
 	}
-	return p.notificationFailed.Close()
+	if err := p.notificationFailed.Close(); err != nil {
+		return err
+	}
+	return p.actionItemReminderDue.Close()
 }
 
-// Both Publish* calls below key by org_id, per kafka-topics.md's topic
-// catalog — a delivery audit/failure signal is an org-wide event, not
-// scoped to one meeting or action item the way this repo's other topics
-// are.
+// PublishNotificationSent/Failed key by org_id, per kafka-topics.md's
+// topic catalog — a delivery audit/failure signal is an org-wide event,
+// not scoped to one meeting or action item the way this repo's other
+// topics are. PublishActionItemReminderDue keys by action_item_id
+// instead, matching that topic's own catalog row.
 
 func (p *Publisher) PublishNotificationSent(ctx context.Context, event entity.NotificationSentEvent) error {
 	return kafkax.Publish(ctx, p.notificationSent, event.OrgID, event)
@@ -51,4 +58,8 @@ func (p *Publisher) PublishNotificationSent(ctx context.Context, event entity.No
 
 func (p *Publisher) PublishNotificationFailed(ctx context.Context, event entity.NotificationFailedEvent) error {
 	return kafkax.Publish(ctx, p.notificationFailed, event.OrgID, event)
+}
+
+func (p *Publisher) PublishActionItemReminderDue(ctx context.Context, event entity.ActionItemReminderDueEvent) error {
+	return kafkax.Publish(ctx, p.actionItemReminderDue, event.ActionItemID, event)
 }

@@ -33,6 +33,7 @@ const (
 	topicSummaryCompleted        = "summary.completed.v1"
 	topicActionItemExtracted     = "action-item.extracted.v1"
 	topicActionItemJiraRequested = "action-item.jira-requested.v1"
+	topicActionItemReminderDue   = "action-item.reminder-due.v1"
 )
 
 const maxConsumeAttempts = 3
@@ -145,6 +146,30 @@ func ConsumeActionItemJiraRequested(ctx context.Context, reader *kafkago.Reader,
 		}
 		retryThenCommit(ctx, reader, msg, topicActionItemJiraRequested, log, func() error {
 			return uc.EnqueueJiraTicket(msgCtx, event.OrgID, event.ActionItemID, event.Description)
+		})
+	}
+}
+
+// ConsumeActionItemReminderDue is this service's own self-consumption of
+// its own scheduler's output — see entity.ActionItemReminderDueEvent's
+// doc comment on why that round trip through Kafka exists at all.
+func ConsumeActionItemReminderDue(ctx context.Context, reader *kafkago.Reader, uc *usecase.EnqueueReminderUseCase, log *logger.Logger) {
+	for {
+		var event entity.ActionItemReminderDueEvent
+		msg, msgCtx, decoded, err := fetchAndDecode(ctx, reader, &event, log)
+		if err != nil {
+			if ctx.Err() != nil {
+				return // shutting down
+			}
+			log.Error("fetch message", "topic", topicActionItemReminderDue, "err", err)
+			time.Sleep(time.Second)
+			continue
+		}
+		if !decoded {
+			continue
+		}
+		retryThenCommit(ctx, reader, msg, topicActionItemReminderDue, log, func() error {
+			return uc.EnqueueReminder(msgCtx, event.OrgID, event.Channel, event.Description)
 		})
 	}
 }

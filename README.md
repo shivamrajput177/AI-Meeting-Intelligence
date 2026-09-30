@@ -21,7 +21,7 @@ hand-written REST/JSON; there's no gRPC or protobuf codegen anywhere in
 this design (see `docs/architecture/microservices.md` §"Internal
 Communication" for why).
 
-## Status: Phase 1 (MVP) implemented, Phase 2 (2.1–2.7) fully implemented, Phase 3 (3.1–3.5) fully implemented, Phase 4.1–4.2 implemented
+## Status: Phase 1 (MVP) implemented, Phase 2 (2.1–2.7) fully implemented, Phase 3 (3.1–3.5) fully implemented, Phase 4.1, 4.2 & 4.4 implemented (4.3 — real Jira — is an explicit stretch item, not yet built)
 
 Auth, User, Organization, and Meeting services, the API Gateway, and a
 React web app are built and running — signup, login, JWT refresh/rotation,
@@ -245,7 +245,36 @@ the Slack webhook URL/SMTP settings/ticket provider are still a single
 dev-config-wide value, not per-org — Phase 4.5's Organization Service
 integration config is what makes any of this per-tenant.
 
-**Not live-verified in this sandbox, for 2.3 through 4.2**: the egress
+Phase 4.4 adds the reminder scheduler, skipping Phase 4.3 (a real
+`AtlassianJiraProvider`) since the roadmap names it an explicit
+same-phase stretch item, not required to keep Phase 4 moving. A new
+`actionitem.reminders` table (Action Item Service's own schema, per
+`docs/architecture/database-schema.md`) gets one row whenever extraction
+persists an item with a due date — its `remind_at` is fixed at 9am UTC on
+that date, since nothing in this codebase's docs specs an endpoint for
+setting a reminder explicitly; auto-creating one at extraction time is
+this session's own reasonable choice to give the scheduler something
+real to fire against, stated plainly as exactly that. Every 60 seconds,
+every Notification Service replica tries to win a Postgres advisory lock
+(`pg_try_advisory_lock`); the one that does queries
+`actionitem.reminders` for anything past due, publishes
+`action-item.reminder-due.v1` per row (self-consumed by this same
+service's existing outbox/dispatch pipeline — a Slack message, reusing
+Phase 4.1's machinery unchanged), and marks each sent. This is the one
+deliberate exception to "services only talk over REST/Kafka" in this
+codebase: Notification Service queries Action Item Service's own schema
+directly, which works today only because every service already shares
+one physical Postgres instance and connects as the same superuser (the
+same fact that made RLS a no-op back in Phase 2.3) — a real, documented
+design decision straight out of `docs/architecture/microservices.md` §10,
+not an accidental layering violation. Unlike the outbox dispatcher (safe
+on every replica via `FOR UPDATE SKIP LOCKED` alone), the reminder
+scheduler needs actual leader election because its Kafka publish and its
+mark-sent update aren't atomic with each other — a second interview-relevant
+distributed pattern (advisory-lock leader election vs. SKIP LOCKED) built
+for real, not just described, in the same service.
+
+**Not live-verified in this sandbox, for 2.3 through 4.4**: the egress
 proxy here blocks all container-registry traffic, so the Kafka broker, a
 real whisper.cpp server, and a real Ollama server have never actually
 been run — the business logic (including the chunking, owner-matching,
@@ -263,10 +292,11 @@ section for a related, now-fixed finding: every repository query in this
 project filters by `org_id` explicitly rather than relying on Postgres
 RLS, which turned out to be silently inert (every service connects as
 the table owner/superuser, which RLS never applies to). **Phase 2 and
-Phase 3 (3.1–3.5) are now fully implemented, and Phase 4.1–4.2
-(Notification Service core + mock Jira ticketing) are in** — Phase 4.3
-(real Jira, stretch) or 4.4 (reminder scheduler) is next; giving each
-service's DB connection its own non-superuser role so RLS becomes real
+Phase 3 (3.1–3.5) are now fully implemented, and Phase 4.1, 4.2, and 4.4
+(Notification Service core + mock Jira ticketing + reminder scheduler)
+are in** — Phase 4.3 (real Jira) stays an explicit, optional stretch;
+Phase 4.5 (org-level integration config) is next; giving each service's
+DB connection its own non-superuser role so RLS becomes real
 defense-in-depth again remains an open follow-up, not tied to any one
 phase.
 
