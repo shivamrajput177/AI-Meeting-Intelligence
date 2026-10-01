@@ -66,9 +66,10 @@ func main() {
 // service that can't find out what port to listen on.
 func loadConfig() serviceConfig {
 	configPath := flag.String("config", "deployments/configs/organization-service.json", "path to config JSON file")
+	secretsPath := flag.String("secrets", "", "optional path to a second JSON file overlaid onto -config (e.g. a Kubernetes Secret-mounted file holding credentials) — see shared/config.LoadMerged")
 	flag.Parse()
 
-	cfg, err := config.Load[serviceConfig](*configPath)
+	cfg, err := config.LoadMerged[serviceConfig](*configPath, *secretsPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "load config:", err)
 		os.Exit(1)

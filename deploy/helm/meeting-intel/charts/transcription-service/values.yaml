@@ -1,0 +1,65 @@
+# See deploy/helm/README.md and docs/architecture/kubernetes-cicd.md §2.
+# config/secrets below are the same dev-safe defaults as
+# deployments/configs/docker/transcription-service.json, split across the two files
+# shared/config.LoadMerged overlays (see this chart's secret.yaml's own
+# comment on why secrets stay dev-safe placeholders here, never real ones).
+global:
+  imageRegistry: ghcr.io/shivamrajput177/ai-meeting-intelligence
+  imageTag: latest
+  imagePullPolicy: IfNotPresent
+image:
+  repository: ''
+  tag: ''
+  pullPolicy: ''
+replicaCount: 1
+service:
+  type: ClusterIP
+  port: 8080
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 70
+scaledObject:
+  enabled: true
+  minReplicaCount: 1
+  maxReplicaCount: 3
+  pollingInterval: 15
+  cooldownPeriod: 120
+  lagThreshold: '2'
+  bootstrapServers: meeting-intel-kafka-kafka-bootstrap.meeting-intel-data.svc.cluster.local:9092
+  triggers:
+  - topic: meeting.uploaded.v1
+    consumerGroup: transcription-service
+pdb:
+  enabled: true
+  minAvailable: 1
+  maxUnavailable: 1
+serviceMonitor:
+  enabled: true
+  path: /metrics
+  interval: 30s
+networkPolicy:
+  enabled: true
+  allowIngressFromGateway: true
+config:
+  port: '8080'
+  log_level: info
+  minio_internal_endpoint: meeting-intel-minio-tenant-hl.meeting-intel-data.svc.cluster.local:9000
+  minio_bucket: recordings
+  minio_use_ssl: false
+  whisper_server_url: http://whisper-cpp.meeting-intel-ai.svc.cluster.local:8080
+  kafka_brokers:
+  - meeting-intel-kafka-kafka-bootstrap.meeting-intel-data.svc.cluster.local:9092
+secrets:
+  database_url: postgres://postgres:postgres@meeting-intel-postgresql.meeting-intel-data.svc.cluster.local:5432/meetingintel
+  internal_service_token: dev-internal-token
+  minio_access_key: minioadmin
+  minio_secret_key: minioadmin123

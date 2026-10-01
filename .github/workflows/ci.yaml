@@ -1,0 +1,144 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Monorepo-aware per docs/architecture/kubernetes-cicd.md §3: only the
+# services a PR/push actually touches get built/tested, `shared/**`
+# changes fan out to every one of them (every service module depends on
+# it via go.work), and anything under deploy/helm, deployments, or this
+# workflow itself re-runs the full matrix too, since those can break a
+# service without touching its own services/<name>/ directory.
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.filter.outputs.changes }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            shared: &shared
+              - 'shared/**'
+              - 'deployments/Dockerfile'
+              - '.github/workflows/ci.yaml'
+            api-gateway:
+              - *shared
+              - 'services/api-gateway/**'
+            auth-service:
+              - *shared
+              - 'services/auth-service/**'
+            user-service:
+              - *shared
+              - 'services/user-service/**'
+            organization-service:
+              - *shared
+              - 'services/organization-service/**'
+            meeting-service:
+              - *shared
+              - 'services/meeting-service/**'
+            transcription-service:
+              - *shared
+              - 'services/transcription-service/**'
+            ai-summary-service:
+              - *shared
+              - 'services/ai-summary-service/**'
+            action-item-service:
+              - *shared
+              - 'services/action-item-service/**'
+            search-service:
+              - *shared
+              - 'services/search-service/**'
+            notification-service:
+              - *shared
+              - 'services/notification-service/**'
+            analytics-service:
+              - *shared
+              - 'services/analytics-service/**'
+
+  lint-test-build:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.services != '[]' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJson(needs.detect-changes.outputs.services) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with: { go-version: "1.25" }
+
+      - name: go vet
+        run: cd services/${{ matrix.service }} && go vet ./...
+
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          working-directory: services/${{ matrix.service }}
+          version: latest
+
+      - name: go test -race
+        run: cd services/${{ matrix.service }} && go test -race -coverprofile=coverage.out ./...
+
+      - uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: services/${{ matrix.service }}
+          severity: CRITICAL,HIGH
+          exit-code: "0" # report-only here — security.yaml's own scheduled run is what gates on findings
+
+      - name: Lower-case image repository
+        id: image
+        run: echo "base=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v3
+        if: github.ref == 'refs/heads/main'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deployments/Dockerfile
+          build-args: SERVICE=${{ matrix.service }}
+          push: ${{ github.ref == 'refs/heads/main' }}
+          tags: ${{ steps.image.outputs.base }}/${{ matrix.service }}:${{ github.sha }}
+
+      - name: helm lint
+        run: |
+          helm dependency build deploy/helm/meeting-intel/charts/meeting-intel-common 2>/dev/null || true
+          cd deploy/helm/meeting-intel/charts/${{ matrix.service }}
+          helm dependency build
+          helm lint .
+
+  update-gitops:
+    needs: [detect-changes, lint-test-build]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bump image tags in Helm values
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          for svc in $(echo '${{ needs.detect-changes.outputs.services }}' | jq -r '.[]'); do
+            yq -i ".image.tag = \"${{ github.sha }}\"" \
+              deploy/helm/meeting-intel/charts/$svc/values.yaml
+          done
+
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: bump image tags [skip ci]"

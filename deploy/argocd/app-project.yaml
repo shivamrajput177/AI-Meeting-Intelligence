@@ -1,0 +1,37 @@
+# The AppProject every Application/ApplicationSet below belongs to — see
+# docs/architecture/kubernetes-cicd.md §4. Scopes what this project's
+# Applications are allowed to do: deploy only from this one repo, only
+# into the five namespaces this platform actually uses (see
+# kubernetes-cicd.md §1's namespace table), and only cluster-scoped
+# resources genuinely needed (CRDs for the operators, Namespaces
+# themselves via CreateNamespace=true).
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: meeting-intel
+  namespace: argocd
+spec:
+  description: AI Meeting Intelligence Platform — see docs/PROJECT_PLAN.md
+  sourceRepos:
+    - https://github.com/shivamrajput177/AI-Meeting-Intelligence
+  destinations:
+    - namespace: meeting-intel
+      server: https://kubernetes.default.svc
+    - namespace: meeting-intel-data
+      server: https://kubernetes.default.svc
+    - namespace: meeting-intel-ai
+      server: https://kubernetes.default.svc
+    - namespace: observability
+      server: https://kubernetes.default.svc
+    - namespace: argocd
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
+  namespaceResourceBlacklist: []

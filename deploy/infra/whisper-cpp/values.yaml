@@ -1,0 +1,14 @@
+namespace: meeting-intel-ai
+image: ghcr.io/ggml-org/whisper.cpp:main
+port: 8080
+
+modelURL: https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
+modelFile: ggml-base.en.bin
+
+# "whisper.cpp (base/small)" row — docs/architecture/kubernetes-cicd.md §1.
+resources:
+  requests: { cpu: "1", memory: 1Gi }
+  limits: { cpu: "2", memory: 2Gi }
+
+persistence:
+  size: 2Gi

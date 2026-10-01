@@ -1,0 +1,15 @@
+apiVersion: v2
+name: ollama
+description: >
+  Ollama (local LLM serving) in the meeting-intel-ai namespace — ai-summary-service
+  and search-service's own config points at this. Mirrors
+  deployments/docker-compose.yaml's ollama + ollama-model-init services:
+  a PVC-backed Deployment for the server itself, plus a post-install/
+  post-upgrade Helm hook Job that runs `ollama pull` for every model this
+  codebase's services actually call (same two models, same idempotent
+  pull-is-a-no-op-if-present behavior as the compose version) — a true
+  initContainer can't do this the way whisper-cpp's can, since pulling
+  needs the server already accepting connections, not just started.
+type: application
+version: 0.1.0
+appVersion: "latest"

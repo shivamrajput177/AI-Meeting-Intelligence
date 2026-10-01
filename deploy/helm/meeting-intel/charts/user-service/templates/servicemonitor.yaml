@@ -1,0 +1,23 @@
+{{- if .Values.serviceMonitor.enabled }}
+# Requires the Prometheus Operator installed in-cluster (Phase 6) to mean
+# anything. Scrapes {{ .Values.serviceMonitor.path }} on this service's
+# own HTTP port — no service in this codebase exposes that path yet (see
+# README.md's Phase 5 status note): this is wired ahead of Phase 6's
+# "Full observability stack" task the same way Phase 4.1 wired a gateway
+# route for an endpoint Phase 4.5 later built. Until then Prometheus will
+# show this target as a scrape failure, which is harmless.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "meeting-intel-common.fullname" . }}
+  labels:
+    {{- include "meeting-intel-common.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "meeting-intel-common.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: http
+      path: {{ .Values.serviceMonitor.path }}
+      interval: {{ .Values.serviceMonitor.interval }}
+{{- end }}

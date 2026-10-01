@@ -25,3 +25,11 @@ deployments/whisper-models/*.bin
 .DS_Store
 .idea/
 .vscode/
+
+# Helm dependency build output — see deploy/helm/README.md. The 11
+# service subcharts and meeting-intel-common stay committed as source;
+# only the resolved/packaged .tgz + lock file are generated — including
+# each service subchart's own nested charts/*.tgz from building its
+# meeting-intel-common dependency, not just the umbrella's own.
+deploy/helm/**/charts/*.tgz
+deploy/helm/**/Chart.lock

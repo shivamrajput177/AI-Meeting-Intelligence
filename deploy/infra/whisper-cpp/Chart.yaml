@@ -1,0 +1,18 @@
+apiVersion: v2
+name: whisper-cpp
+description: >
+  whisper.cpp's ASR server in the meeting-intel-ai namespace —
+  transcription-service's own config points at this. Mirrors
+  deployments/docker-compose.yaml's whisper + whisper-model-init
+  services: an initContainer downloads the ggml model onto a PVC before
+  the main whisper-server container starts (unlike Ollama's model pull,
+  this is a plain file download with no server to wait for, so a true
+  initContainer works here — see ../ollama/Chart.yaml's own note on why
+  Ollama needs a separate post-install Job instead). See
+  deployments/docker-compose.yaml's own whisper service comment for the
+  "never actually pulled/run in this sandbox" caveat this chart inherits
+  unchanged — the image/command pair is best-effort from whisper.cpp's
+  documented server usage, not confirmed working here.
+type: application
+version: 0.1.0
+appVersion: "main"

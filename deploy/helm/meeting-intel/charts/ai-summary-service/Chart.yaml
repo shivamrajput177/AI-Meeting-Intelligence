@@ -1,0 +1,10 @@
+apiVersion: v2
+name: ai-summary-service
+description: "AI Summary Service \u2014 chunking + Ollama summarization off transcription.completed.v1."
+type: application
+version: 0.1.0
+appVersion: 1.0.0
+dependencies:
+- name: meeting-intel-common
+  version: 0.1.0
+  repository: file://../meeting-intel-common

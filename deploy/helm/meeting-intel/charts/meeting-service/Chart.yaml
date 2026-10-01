@@ -1,0 +1,13 @@
+apiVersion: v2
+name: meeting-service
+description: "Meeting Service \u2014 presigned MinIO upload, metadata, status machine\
+  \ (consumes several Kafka topics for status wiring, but is grouped with the HPA\
+  \ services here per kubernetes-cicd.md \xA72 rather than the KEDA/ScaledObject group\
+  \ \u2014 it isn't one of the heavier AI-pipeline consumers)."
+type: application
+version: 0.1.0
+appVersion: 1.0.0
+dependencies:
+- name: meeting-intel-common
+  version: 0.1.0
+  repository: file://../meeting-intel-common

@@ -1,0 +1,60 @@
+{{- if .Values.networkPolicy.enabled }}
+# Covers both the -api and -worker Deployments' pods — this selector only
+# matches the common app.kubernetes.io/name label, not the per-variant
+# app.kubernetes.io/component one, same reasoning as every other
+# service's networkpolicy.yaml (see ../api-gateway/templates/networkpolicy.yaml's
+# fuller comment on the default-deny + namespace-granularity egress design).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "meeting-intel-common.fullname" . }}
+  labels:
+    {{- include "meeting-intel-common.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "meeting-intel-common.selectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    {{- if .Values.networkPolicy.allowIngressFromGateway }}
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: api-gateway
+      ports:
+        - port: http
+          protocol: TCP
+    {{- else }}
+    - {}
+    {{- end }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - port: http
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: meeting-intel
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: meeting-intel-data
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: meeting-intel-ai
+{{- end }}

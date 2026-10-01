@@ -1,0 +1,51 @@
+# Kind-local overrides — `helm install meeting-intel . -f values.yaml -f
+# values-dev.yaml -n meeting-intel --create-namespace`. Everything here
+# either lowers resource footprint to fit a laptop (kubernetes-cicd.md
+# §1's budget table) or swaps a cloud-only primitive (LoadBalancer) for
+# something Kind actually has (NodePort — see ../kind/kind-config.yaml's
+# own doc comment on the fixed :8000→30080 mapping this matches).
+
+api-gateway:
+  service:
+    type: NodePort
+    nodePort: 30080
+
+postgresql:
+  primary:
+    resources:
+      requests: { cpu: 250m, memory: 512Mi }
+      limits: { cpu: "1", memory: 1Gi }
+    persistence:
+      size: 2Gi
+  readReplicas:
+    resources:
+      requests: { cpu: 250m, memory: 512Mi }
+      limits: { cpu: "1", memory: 1Gi }
+    persistence:
+      size: 2Gi
+
+redis:
+  master:
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { cpu: 250m, memory: 256Mi }
+    persistence:
+      enabled: false
+
+minioTenant:
+  tenant:
+    pools:
+      - servers: 1
+        name: pool-0
+        volumesPerServer: 4
+        size: 1Gi # "4-drive erasure-coded locally" at a laptop-friendly size
+        resources:
+          requests: { cpu: 100m, memory: 256Mi }
+          limits: { cpu: 500m, memory: 512Mi }
+
+# Every application service subchart reads global.imageTag; for local Kind
+# development against an image built with `kind load docker-image` rather
+# than pulled from GHCR, override both here:
+global:
+  imageTag: dev
+  imagePullPolicy: IfNotPresent

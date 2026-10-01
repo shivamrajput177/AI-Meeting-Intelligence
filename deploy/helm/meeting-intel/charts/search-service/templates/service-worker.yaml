@@ -1,0 +1,19 @@
+# No application traffic is ever routed here (the worker Deployment's own
+# HTTP server sits idle — see Chart.yaml's caveat); this Service exists so
+# the ServiceMonitor below has something to select for metrics scraping.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "meeting-intel-common.fullname" . }}-worker
+  labels:
+    {{- include "meeting-intel-common.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+  selector:
+    {{- include "meeting-intel-common.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: worker

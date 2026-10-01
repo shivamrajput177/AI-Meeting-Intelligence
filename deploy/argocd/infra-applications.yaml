@@ -1,0 +1,214 @@
+# Stateful/operator infra as plain Application objects (not an
+# ApplicationSet — that's for the homogeneous, repeated "one per service"
+# case in applicationset.yaml; this is a short, fixed, genuinely
+# heterogeneous list, which an ApplicationSet template would only make
+# harder to read). Two sync-waves per
+# docs/architecture/kubernetes-cicd.md §4:
+#
+#   -1  operator CRDs + controllers (Strimzi, MinIO Operator) — must be
+#       Healthy before anything that creates their custom resources syncs
+#   0   the stateful infra those operators (and the two Bitnami charts)
+#       manage — must be Healthy before the application services in
+#       applicationset.yaml (sync-wave 2) sync
+#
+# Note on values below vs. deploy/helm/meeting-intel/values.yaml: the
+# umbrella chart bundles postgresql/redis/minioOperator/minioTenant as
+# Helm dependencies for a convenient single-command LOCAL `helm install`
+# (see deploy/helm/README.md). Helm dependency order isn't the same thing
+# as Argo sync-waves, so the GitOps path below installs each as its own
+# Application instead, with the values that matter repeated here rather
+# than through the umbrella. Keep the two in sync by hand if either
+# changes — documented here plainly rather than silently risking drift.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: strimzi-kafka-operator
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: meeting-intel
+  source:
+    repoURL: https://strimzi.io/charts/
+    chart: strimzi-kafka-operator
+    targetRevision: "0.45.*"
+    helm:
+      values: |
+        watchNamespaces: ["meeting-intel-data"]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: meeting-intel-data
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: minio-operator
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: meeting-intel
+  source:
+    repoURL: https://operator.min.io
+    chart: operator
+    targetRevision: "7.*.*"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: minio-operator
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: postgresql
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: meeting-intel
+  source:
+    repoURL: https://charts.bitnami.com/bitnami
+    chart: postgresql
+    targetRevision: "16.*.*"
+    helm:
+      values: |
+        auth:
+          username: postgres
+          password: postgres
+          database: meetingintel
+        image:
+          registry: docker.io
+          repository: pgvector/pgvector
+          tag: pg16
+        architecture: replication
+        readReplicas:
+          replicaCount: 1
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: meeting-intel-data
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: redis
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: meeting-intel
+  source:
+    repoURL: https://charts.bitnami.com/bitnami
+    chart: redis
+    targetRevision: "20.*.*"
+    helm:
+      values: |
+        architecture: standalone
+        auth:
+          enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: meeting-intel-data
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: minio-tenant
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: meeting-intel
+  source:
+    repoURL: https://operator.min.io
+    chart: tenant
+    targetRevision: "7.*.*"
+    helm:
+      values: |
+        tenant:
+          name: meeting-intel
+          configSecret:
+            name: meeting-intel-minio-env-configuration
+            accessKey: minioadmin
+            secretKey: minioadmin123
+          pools:
+            - servers: 1
+              name: pool-0
+              volumesPerServer: 4
+              size: 1Gi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: meeting-intel-data
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: strimzi-kafka
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: meeting-intel
+  source:
+    repoURL: https://github.com/shivamrajput177/AI-Meeting-Intelligence
+    targetRevision: main
+    path: deploy/infra/strimzi-kafka
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: meeting-intel-data
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ollama
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: meeting-intel
+  source:
+    repoURL: https://github.com/shivamrajput177/AI-Meeting-Intelligence
+    targetRevision: main
+    path: deploy/infra/ollama
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: meeting-intel-ai
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: whisper-cpp
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: meeting-intel
+  source:
+    repoURL: https://github.com/shivamrajput177/AI-Meeting-Intelligence
+    targetRevision: main
+    path: deploy/infra/whisper-cpp
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: meeting-intel-ai
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]

@@ -1,0 +1,48 @@
+# App-of-apps via ApplicationSet, per docs/architecture/kubernetes-cicd.md
+# §4 — adding a 12th service later is a one-line change to this list.
+# sync-wave "2" (after infra-applications.yaml's -1/0 waves) so these only
+# sync once Postgres/Kafka/Redis/MinIO/Ollama/whisper.cpp are Healthy.
+# Each element points straight at that service's own chart under
+# deploy/helm/meeting-intel/charts/{{name}} with no extra valueFiles — the
+# chart's own values.yaml is already the dev-safe default this needs (see
+# deploy/helm/meeting-intel/README.md and each chart's own values.yaml
+# comment); there's no umbrella-relative values-dev.yaml reachable from a
+# standalone per-chart Application source the way there is for a local
+# `helm install -f values.yaml -f values-dev.yaml` of the umbrella chart.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: meeting-intel-services
+  namespace: argocd
+spec:
+  generators:
+    - list:
+        elements:
+          - name: api-gateway
+          - name: auth-service
+          - name: user-service
+          - name: organization-service
+          - name: meeting-service
+          - name: transcription-service
+          - name: ai-summary-service
+          - name: action-item-service
+          - name: search-service
+          - name: notification-service
+          - name: analytics-service
+  template:
+    metadata:
+      name: "{{name}}"
+      annotations:
+        argocd.argoproj.io/sync-wave: "2"
+    spec:
+      project: meeting-intel
+      source:
+        repoURL: https://github.com/shivamrajput177/AI-Meeting-Intelligence
+        targetRevision: main
+        path: deploy/helm/meeting-intel/charts/{{name}}
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: meeting-intel
+      syncPolicy:
+        automated: { prune: true, selfHeal: true }
+        syncOptions: [CreateNamespace=true]

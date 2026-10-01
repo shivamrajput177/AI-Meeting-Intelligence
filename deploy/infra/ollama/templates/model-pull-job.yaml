@@ -1,0 +1,36 @@
+# Mirrors deployments/docker-compose.yaml's ollama-model-init service —
+# `ollama pull` is idempotent (a no-op if already pulled), so this is
+# safe to re-run on every `helm upgrade`, same as compose's own
+# once-then-skip behavior but via Ollama's own client instead of a file
+# check. hook-delete-policy keeps this Job around across failures for
+# `kubectl logs`/`describe` debugging, cleaned up on the next successful
+# run instead of accumulating forever.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ollama-model-pull
+  namespace: {{ .Values.namespace }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 6
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: ollama-pull
+          image: {{ .Values.image }}
+          env:
+            - name: OLLAMA_HOST
+              value: "http://ollama.{{ .Values.namespace }}.svc.cluster.local:{{ .Values.port }}"
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              echo "waiting for ollama to accept connections..."
+              until ollama list >/dev/null 2>&1; do sleep 5; done
+              {{- range .Values.models }}
+              ollama pull {{ . }}
+              {{- end }}

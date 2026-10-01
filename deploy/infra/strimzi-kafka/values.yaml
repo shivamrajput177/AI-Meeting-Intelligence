@@ -1,0 +1,61 @@
+# clusterName is deliberately "meeting-intel-kafka", not "meeting-intel"
+# — Strimzi names the bootstrap Service "<clusterName>-kafka-bootstrap",
+# and every service chart's values.yaml (generated against this exact
+# name) already hardcodes
+# "meeting-intel-kafka-kafka-bootstrap.meeting-intel-data.svc.cluster.local:9092"
+# as its kafka_brokers entry. Change this value and every one of those
+# would need updating too.
+clusterName: meeting-intel-kafka
+namespace: meeting-intel-data
+
+kafka:
+  version: "3.9.0"
+  metadataVersion: "3.9-IV0"
+  # Single combined controller+broker node — "KafkaNodePool for
+  # broker+controller combined role locally" per kubernetes-cicd.md §1.
+  # A real cluster would split these into separate pools with replicas
+  # >= 3 each, like Strimzi's own kafka-ephemeral.yaml example.
+  replicas: 1
+  storage:
+    # Ephemeral, not persistent-claim — acceptable for a local Kind demo
+    # (per the same resource-budget trade-off kubernetes-cicd.md §1 makes
+    # for MinIO's single-server tenant), never for anything real: a pod
+    # restart loses every topic's data.
+    type: ephemeral
+  config:
+    offsets.topic.replication.factor: 1
+    transaction.state.log.replication.factor: 1
+    transaction.state.log.min.isr: 1
+    default.replication.factor: 1
+    min.insync.replicas: 1
+
+# One entry per topic this codebase's services actually produce/consume
+# (grep across services/*/*.go for the literal topic string) — NOT the
+# full catalog in docs/architecture/kafka-topics.md, which also documents
+# six topics (meeting.deleted.v1, meeting.snapshot.v1, org.created.v1,
+# org.quota-exceeded.v1, user.registered.v1, user.role-changed.v1) that no
+# phase has ever actually wired a producer or consumer for. Creating
+# KafkaTopic CRDs for those would be inventing infrastructure for code
+# that doesn't exist — the same "verify against the real code, not just
+# the doc" check this project has applied at every previous phase.
+topics:
+  - meeting.uploaded.v1
+  - meeting.status-changed.v1
+  - transcription.completed.v1
+  - transcription.failed.v1
+  - summary.completed.v1
+  - summary.failed.v1
+  - action-item.extracted.v1
+  - action-item.extraction-failed.v1
+  - action-item.status-changed.v1
+  - action-item.jira-requested.v1
+  - action-item.reminder-due.v1
+  - chunk.created.v1
+  - embedding.completed.v1
+  - embedding.failed.v1
+  - notification.sent.v1
+  - notification.failed.v1
+
+topicDefaults:
+  partitions: 3
+  replicas: 1

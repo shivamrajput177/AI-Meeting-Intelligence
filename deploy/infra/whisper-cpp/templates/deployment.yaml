@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: whisper-cpp
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: whisper-cpp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: whisper-cpp
+  strategy:
+    type: Recreate # PVC is ReadWriteOnce, same reasoning as ../ollama/templates/deployment.yaml
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: whisper-cpp
+    spec:
+      initContainers:
+        # Mirrors deployments/docker-compose.yaml's whisper-model-init —
+        # downloads once, skips on every later pod restart since the PVC
+        # already has the file.
+        - name: model-init
+          image: curlimages/curl:8.10.1
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              if [ -f /models/{{ .Values.modelFile }} ]; then
+                echo "model-init: {{ .Values.modelFile }} already present, skipping"
+              else
+                echo "model-init: downloading {{ .Values.modelFile }}..."
+                curl -fL -o /models/{{ .Values.modelFile }}.tmp {{ .Values.modelURL }}
+                mv /models/{{ .Values.modelFile }}.tmp /models/{{ .Values.modelFile }}
+                echo "model-init: done"
+              fi
+          volumeMounts:
+            - name: models
+              mountPath: /models
+      containers:
+        - name: whisper-cpp
+          image: {{ .Values.image }}
+          # command overrides the image's ENTRYPOINT, args its CMD — the
+          # Kubernetes equivalent of docker-compose.yaml's own
+          # entrypoint/command split for this same image.
+          command: ["/app/build/bin/whisper-server"]
+          args: ["--host", "0.0.0.0", "--port", "{{ .Values.port | toString }}", "-m", "/models/{{ .Values.modelFile }}"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.port }}
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: models
+              mountPath: /models
+              readOnly: true
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: whisper-models
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: whisper-cpp
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: whisper-cpp
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.port }}
+      targetPort: http
+  selector:
+    app.kubernetes.io/name: whisper-cpp

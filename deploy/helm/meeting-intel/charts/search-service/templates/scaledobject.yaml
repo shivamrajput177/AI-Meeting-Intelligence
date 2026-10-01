@@ -1,0 +1,26 @@
+{{- if .Values.worker.scaledObject.enabled }}
+# Requires KEDA installed in-cluster — see ../notification-service/templates/scaledobject.yaml's
+# identical note.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "meeting-intel-common.fullname" . }}-worker
+  labels:
+    {{- include "meeting-intel-common.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  scaleTargetRef:
+    name: {{ include "meeting-intel-common.fullname" . }}-worker
+  pollingInterval: {{ .Values.worker.scaledObject.pollingInterval }}
+  cooldownPeriod: {{ .Values.worker.scaledObject.cooldownPeriod }}
+  minReplicaCount: {{ .Values.worker.scaledObject.minReplicaCount }}
+  maxReplicaCount: {{ .Values.worker.scaledObject.maxReplicaCount }}
+  triggers:
+    - type: kafka
+      metadata:
+        bootstrapServers: {{ .Values.worker.scaledObject.bootstrapServers | quote }}
+        consumerGroup: {{ .Values.worker.scaledObject.consumerGroup | quote }}
+        topic: {{ .Values.worker.scaledObject.topic | quote }}
+        lagThreshold: {{ .Values.worker.scaledObject.lagThreshold | quote }}
+        allowIdleConsumers: "true"
+{{- end }}

@@ -1,0 +1,90 @@
+# Shared defaults for every environment — layer values-dev.yaml (Kind) or
+# values-prod.yaml (placeholder) on top with `-f values.yaml -f
+# values-dev.yaml`. Per-service resource requests/limits and replica
+# counts live in each service's own charts/<service>/values.yaml (the
+# "Go services (each): 100m/128Mi → 500m/256Mi" row from
+# docs/architecture/kubernetes-cicd.md §1's budget table is each
+# service's own chart default, not repeated here) — this file only holds
+# what's genuinely shared across the whole platform: the stateful infra
+# dependencies' settings and the one registry/tag convention every
+# service subchart's values.yaml references via `.Values.global`.
+
+global:
+  # ghcr.io/<owner>/<repo>/<service>:<tag> — set by CI
+  # (.github/workflows/ci.yaml's update-gitops job bumps `imageTag` to the
+  # commit SHA per changed service; see each service's own values.yaml
+  # for where this is read).
+  imageRegistry: ghcr.io/shivamrajput177/ai-meeting-intelligence
+  imageTag: latest
+  imagePullPolicy: IfNotPresent
+
+  # Every service's own database_url points at this single shared
+  # Postgres instance/database — see README.md's own note on why this is
+  # one shared instance, not one-per-service, matching docker-compose's
+  # existing topology exactly (and §1's "demonstrates HA even locally"
+  # primary+replica note below).
+  postgresql:
+    host: "" # computed from the Bitnami release name at template time — see each service's configmap.yaml
+    database: meetingintel
+    username: postgres
+
+  # Only api-gateway actually uses Redis (rate limiting + the session
+  # cache behind its own JWT auth middleware) — see README.md's
+  # Configuration section.
+  redis:
+    host: ""
+
+  # Only meeting-service (presigned uploads) and transcription-service
+  # (reading audio back out) talk to MinIO.
+  minio:
+    endpoint: ""
+    bucket: meetingintel
+
+  # internal_service_token/jwt_signing_key are never set here — they come
+  # from each service's own Secret (charts/<service>/templates/secret.yaml),
+  # populated out-of-band (SOPS+age in GitOps — see
+  # ../../argocd/SECRETS.md — or `kubectl create secret` directly for a
+  # bare Kind cluster), never from Helm values/git.
+
+postgresql:
+  enabled: true
+  auth:
+    username: postgres
+    password: postgres
+    database: meetingintel
+  image:
+    # pgvector's own image, not stock postgres — Phase 3.1 needs the
+    # pgvector extension available, same as deployments/docker-compose.yaml.
+    registry: docker.io
+    repository: pgvector/pgvector
+    tag: pg16
+  # Primary + 1 read replica, per kubernetes-cicd.md §1 ("demonstrates HA
+  # even locally") — every service still only ever writes to/reads from
+  # the primary today (no read/write splitting exists in this codebase
+  # yet), so the replica exists to demonstrate the topology and failover
+  # drill (Phase 6's DR work), not because anything routes reads to it.
+  architecture: replication
+  readReplicas:
+    replicaCount: 1
+
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: false # matches docker-compose's own no-auth dev Redis
+
+minioOperator:
+  enabled: true
+
+minioTenant:
+  enabled: true
+  tenant:
+    name: meeting-intel
+    configSecret:
+      name: meeting-intel-minio-env-configuration
+      accessKey: minioadmin
+      secretKey: minioadmin123
+    pools:
+      - servers: 1
+        name: pool-0
+        volumesPerServer: 4 # "4-drive erasure-coded locally" — kubernetes-cicd.md §1

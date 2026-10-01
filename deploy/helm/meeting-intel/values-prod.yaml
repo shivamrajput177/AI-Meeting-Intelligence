@@ -1,0 +1,28 @@
+# Placeholder for a real cluster — per
+# docs/architecture/kubernetes-cicd.md §2 ("values-prod.yaml: placeholder
+# for real-cluster overrides"). Nothing in this project has been deployed
+# to a real cluster yet (Phase 5's own scope is Kind-only — see
+# README.md's Phase 5 status note), so none of the values below have been
+# exercised; they document the overrides a real deployment would need,
+# not ones this repo has verified.
+#
+# Expected real-cluster differences from values-dev.yaml:
+#   - api-gateway.service.type: LoadBalancer (or an Ingress in front of a
+#     ClusterIP), not NodePort — Kind has no cloud load balancer to ask for.
+#   - postgresql.primary.persistence / readReplicas.persistence: a real
+#     StorageClass with actual backups (see Phase 6's DR work), not Kind's
+#     local-path-provisioner default.
+#   - minioTenant.tenant.pools[0].servers: 4+ for real erasure coding
+#     (distributed mode) instead of this repo's single-server
+#     "distributed enough to demo the shape of it" default.
+#   - global.imageTag: a real commit SHA from CI (see
+#     .github/workflows/ci.yaml's update-gitops job), never "dev"/"latest".
+#   - Every service's resources.requests/limits sized against real
+#     traffic, not the laptop budget in kubernetes-cicd.md §1.
+global:
+  imageTag: "" # set by CI's update-gitops job, per service
+  imagePullPolicy: IfNotPresent
+
+api-gateway:
+  service:
+    type: LoadBalancer

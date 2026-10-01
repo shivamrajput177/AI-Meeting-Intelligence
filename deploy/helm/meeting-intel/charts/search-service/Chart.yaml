@@ -1,0 +1,23 @@
+apiVersion: v2
+name: search-service
+description: >
+  Search Service — pgvector semantic search + RAG (HTTP API) and the
+  chunk.created.v1 embedding pipeline (Kafka consumer), both built into
+  the one Go binary (see services/search-service/main.go). Split into two
+  Deployments (search-service-api, search-service-worker) of that same
+  image per docs/architecture/kubernetes-cicd.md §2, so the API half
+  scales on CPU/HTTP load (hpa.yaml) and the embedding half scales on
+  Kafka consumer lag (scaledobject.yaml) independently — see values.yaml's
+  own comment for the honest caveat this split doesn't change what the
+  binary itself does: every pod of either Deployment still runs both the
+  HTTP server and the Kafka consumer goroutine, sharing one consumer
+  group, so "worker" replicas also serve HTTP (just nothing routes to
+  them) and "api" replicas also consume their share of the partition
+  load.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+dependencies:
+  - name: meeting-intel-common
+    version: "0.1.0"
+    repository: "file://../meeting-intel-common"

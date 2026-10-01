@@ -1,0 +1,29 @@
+{{- if .Values.scaledObject.enabled }}
+# Requires KEDA installed in-cluster (kubernetes-cicd.md §1's "Install
+# KEDA" task) — this CRD is inert otherwise. allowIdleConsumers lets every
+# replica subscribe even when partitions < maxReplicaCount, matching this
+# consumer group's own at-least-once semantics (shared/kafkax).
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "meeting-intel-common.fullname" . }}
+  labels:
+    {{- include "meeting-intel-common.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "meeting-intel-common.fullname" . }}
+  pollingInterval: {{ .Values.scaledObject.pollingInterval }}
+  cooldownPeriod: {{ .Values.scaledObject.cooldownPeriod }}
+  minReplicaCount: {{ .Values.scaledObject.minReplicaCount }}
+  maxReplicaCount: {{ .Values.scaledObject.maxReplicaCount }}
+  triggers:
+    {{- range .Values.scaledObject.triggers }}
+    - type: kafka
+      metadata:
+        bootstrapServers: {{ $.Values.scaledObject.bootstrapServers | quote }}
+        consumerGroup: {{ .consumerGroup | quote }}
+        topic: {{ .topic | quote }}
+        lagThreshold: {{ $.Values.scaledObject.lagThreshold | quote }}
+        allowIdleConsumers: "true"
+    {{- end }}
+{{- end }}

@@ -1,0 +1,37 @@
+{{- if .Values.serviceMonitor.enabled }}
+# See ../api-gateway/templates/servicemonitor.yaml's identical note on
+# this scraping a /metrics path no service in this codebase exposes yet.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "meeting-intel-common.fullname" . }}-api
+  labels:
+    {{- include "meeting-intel-common.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  selector:
+    matchLabels:
+      {{- include "meeting-intel-common.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  endpoints:
+    - port: http
+      path: {{ .Values.serviceMonitor.path }}
+      interval: {{ .Values.serviceMonitor.interval }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "meeting-intel-common.fullname" . }}-worker
+  labels:
+    {{- include "meeting-intel-common.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  selector:
+    matchLabels:
+      {{- include "meeting-intel-common.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+  endpoints:
+    - port: http
+      path: {{ .Values.serviceMonitor.path }}
+      interval: {{ .Values.serviceMonitor.interval }}
+{{- end }}

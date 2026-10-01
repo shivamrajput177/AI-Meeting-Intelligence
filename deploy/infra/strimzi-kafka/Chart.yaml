@@ -1,0 +1,16 @@
+apiVersion: v2
+name: strimzi-kafka
+description: >
+  The Kafka cluster itself (KafkaNodePool + Kafka custom resources, KRaft
+  mode — no separate ZooKeeper) plus one KafkaTopic per topic this
+  codebase actually produces/consumes, per
+  docs/architecture/kubernetes-cicd.md §1-2. Requires the Strimzi Kafka
+  Operator already installed in-cluster (its own CRDs + controller — see
+  ../../argocd/infra-applicationset.yaml's sync-wave -1 for where that's
+  installed from, the upstream `strimzi-kafka-operator` Helm chart, not
+  this one). This chart only ever creates the operator's custom
+  resources, never the operator itself — same separation of concerns as
+  minio-operator vs. minioTenant in the umbrella chart's Chart.yaml.
+type: application
+version: 0.1.0
+appVersion: "3.9.0"

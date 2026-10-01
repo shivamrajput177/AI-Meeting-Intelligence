@@ -21,7 +21,7 @@ hand-written REST/JSON; there's no gRPC or protobuf codegen anywhere in
 this design (see `docs/architecture/microservices.md` §"Internal
 Communication" for why).
 
-## Status: Phase 1 (MVP) implemented, Phase 2 (2.1–2.7) fully implemented, Phase 3 (3.1–3.5) fully implemented, Phase 4.1, 4.2, 4.4 & 4.5 implemented (4.3 — real Jira — is an explicit stretch item, not yet built)
+## Status: Phase 1 (MVP) implemented, Phase 2 (2.1–2.7) fully implemented, Phase 3 (3.1–3.5) fully implemented, Phase 4 (4.1, 4.2, 4.4, 4.5 — 4.3 is an explicit, still-skipped stretch item) implemented, Phase 5 (5.1–5.5, Kubernetes/Helm/CI-CD/GitOps) authored and reviewed, not yet run against a live cluster — see Phase 5's own paragraph below for exactly what that split means
 
 Auth, User, Organization, and Meeting services, the API Gateway, and a
 React web app are built and running — signup, login, JWT refresh/rotation,
@@ -307,6 +307,125 @@ scope (per `docs/ROADMAP.md`) was Slack webhook + ticket provider + Jira
 project/token, not SMTP, so that gap is left exactly where it was rather
 than solved speculatively.
 
+Phase 5 moves the whole platform off `docker compose` onto Kubernetes —
+Kind locally, Helm for packaging, GitHub Actions for CI, ArgoCD for
+GitOps — per `docs/architecture/kubernetes-cicd.md`. `deploy/kind/kind-config.yaml`
+is a 1-control-plane + 2-worker Kind cluster with a fixed hostPort→NodePort
+mapping (`:8000`→`30080`) so every existing README curl example keeps
+working unchanged once the cluster's up — no ingress controller needed for
+that, api-gateway's own Service is just a NodePort by default now.
+
+`deploy/helm/meeting-intel/` is the umbrella chart: a `meeting-intel-common`
+library chart holds the shared `app.kubernetes.io/*` label/selector
+helpers every one of the 11 service subcharts under `charts/` includes,
+so `templates/deployment.yaml`, `service.yaml`, `configmap.yaml`,
+`secret.yaml`, `pdb.yaml`, `servicemonitor.yaml`, and `networkpolicy.yaml`
+are the exact same file, verbatim, across api-gateway/auth-service/
+user-service/organization-service/meeting-service (the 5 HPA'd on CPU)
+and transcription/ai-summary/action-item/notification/analytics-service
+(the 5 KEDA-`ScaledObject`'d on their own Kafka consumer group's lag,
+keyed by the exact group names/topics each service's own `consumer.go`
+already uses) — only each chart's own `values.yaml` differs. Every
+service's ConfigMap/Secret pair is new, real Go code, not just YAML:
+`shared/config.LoadMerged` (new function) lets each service's `main.go`
+accept a second `-secrets` flag overlaid onto `-config` (same JSON
+merge semantics, zero behavior change when `-secrets` is omitted, which
+is every docker-compose/local-dev invocation) — the ConfigMap mounts the
+non-secret half, the Secret (dev-safe placeholder values, same philosophy
+as `deployments/configs/*.template.json`) mounts the rest, matching
+`kubernetes-cicd.md` §2's "ConfigMap + separate Secret, never one
+plaintext blob" call exactly instead of working around it.
+
+`search-service` gets the one deliberately different chart:
+`deployment-api`/`deployment-worker` (one HPA'd, one `ScaledObject`'d) of
+the *same* image, since `kubernetes-cicd.md` §2 asks for that split but
+this codebase's `search-service/main.go` is one binary that always runs
+both the HTTP API and the `chunk.created.v1` Kafka consumer together —
+this chart's own `Chart.yaml`/`values.yaml` say so plainly: splitting the
+Deployment gives genuinely independent *scaling knobs*, not genuinely
+independent *workloads* (the "worker" pods' HTTP server sits idle, the
+"api" pods still consume their share of the shared consumer group). A
+real fix would need an `-api-only`/`-worker-only` flag in `main.go` that
+doesn't exist; this phase names the gap instead of hiding it, the same
+way Phase 4.2 named `TicketProviderAtlassianJira`'s missing
+implementation.
+
+`deploy/infra/` holds the three things with no ready-made Helm chart to
+depend on: `strimzi-kafka` (a `KafkaNodePool` + `Kafka` CR in KRaft mode,
+plus one `KafkaTopic` CRD per topic this codebase's services **actually**
+produce/consume — 16 of them, checked by grepping every topic string
+literal in `services/*/*.go`, deliberately *not* the 6 extra topics
+`docs/architecture/kafka-topics.md` documents but no phase ever wired a
+producer/consumer for), `ollama` (PVC-backed Deployment + a post-install
+Helm hook Job that `ollama pull`s the same two models
+`deployments/docker-compose.yaml`'s `ollama-model-init` already pulls),
+and `whisper-cpp` (PVC-backed Deployment with a model-download
+initContainer, mirroring compose's `whisper-model-init` exactly).
+Postgres, Redis, and MinIO come from real upstream charts
+(`bitnami/postgresql`, `bitnami/redis`, `minio-operator/operator` +
+`tenant`) declared as the umbrella chart's own Helm dependencies for a
+one-command local install, and declared *again* as separate
+`deploy/argocd/infra-applications.yaml` Applications for the GitOps path
+— the two aren't unified because Argo's sync-wave ordering (operators
+before the custom resources they manage, before application services)
+isn't the same thing as Helm's own subchart dependency order within one
+release; `infra-applications.yaml`'s own top comment says plainly that
+the two value sets need to be kept in sync by hand, rather than silently
+risking drift unmentioned. `deploy/argocd/applicationset.yaml` is the
+app-of-apps for the 11 services themselves (sync-wave 2, after infra's
+-1/0), and `deploy/argocd/SECRETS.md` documents the SOPS+age flow real
+secrets would use — written as a copy-and-run setup, not claimed as
+wired up anywhere in this repo.
+
+Every service's own `ServiceMonitor` is wired to scrape `/metrics` on
+that service's existing HTTP port — no service in this codebase exposes
+that path yet (Phase 6's "Full observability stack" task is where a real
+one lands); this is the same "infrastructure wired ahead of the phase
+that implements its target" move Phase 4.1's early
+`POST /orgs/{orgId}/integrations/test` gateway route already made for
+Phase 4.5 to later complete, named explicitly in each `servicemonitor.yaml`'s
+own comment rather than left for someone to discover as a silent scrape
+failure. Each `NetworkPolicy` is default-deny-and-explicit-allow (ingress
+only from api-gateway + the observability namespace; egress only to
+DNS and the three application/data/ai namespaces) at namespace
+granularity, not a precise per-service allow-list of exactly which
+Postgres/Kafka/Redis/MinIO/Ollama/whisper.cpp/other-service dependency
+each one actually calls — Phase 6's own task list names
+"NetworkPolicies (default-deny)" again on purpose, which is where that
+tightening belongs. `kubernetes-cicd.md` §4's "migration-as-PreSync-hook
+Job per service schema" is deliberately **not** built as a separate Job:
+every service already self-migrates idempotently at the top of its own
+`main()` (`shared/dbx.RunMigrations`, before `ListenAndServe`), and a
+separate Job would need a migrate-only binary mode that doesn't exist —
+inventing one just to match the doc literally would be scope creep this
+phase didn't take on; the practical effect is close enough (migrations
+run before traffic either way, and re-running them is a safe no-op) that
+this is named as a conscious simplification, not silently skipped.
+
+**Not run against a live cluster, for all of Phase 5**: this sandbox has
+no running Docker daemon and no `kind`/`kubectl`/`helm` pre-installed (all
+three npm/apt-style installs were blocked by the same egress policy that
+already blocked container-registry traffic in earlier phases) — `helm`
+and `kubeconform` were installed here via `go install` against
+`proxy.golang.org` (allowed) and `kubectl` via a direct binary fetch from
+`dl.k8s.io` (also allowed), which was enough to `helm lint` and
+`helm template` every chart in this phase and validate every rendered
+manifest — core Kubernetes types *and* every CRD used here (Strimzi's
+`Kafka`/`KafkaNodePool`/`KafkaTopic`, KEDA's `ScaledObject`, Prometheus
+Operator's `ServiceMonitor`, ArgoCD's `Application`/`ApplicationSet`/`AppProject`)
+— against their real, current schemas via `kubeconform`'s CRD catalog.
+What that can't do: actually bring up a Kind cluster, run
+`helm dependency build` against `charts.bitnami.com`/`operator.min.io`
+(both blocked by this sandbox's egress policy — `helm dependency build`
+for each service chart's own local `meeting-intel-common` dependency
+works fine, since that's a `file://` path, not a network fetch),
+install Strimzi/KEDA/the Prometheus Operator/ArgoCD for real, or run the
+two demos Phase 5's own roadmap entry calls for (a push triggering
+CI→GHCR→ArgoCD→a new pod version live; a Kafka backlog triggering a real
+KEDA scale-out). Every chart, workflow, and GitOps manifest here is real,
+reviewed, schema-valid code — it has not been watched actually
+reconciling a cluster.
+
 **Not live-verified in this sandbox, for 2.3 through 4.5**: the egress
 proxy here blocks all container-registry traffic, so the Kafka broker, a
 real whisper.cpp server, and a real Ollama server have never actually
@@ -331,7 +450,10 @@ Phase 3 (3.1–3.5) are now fully implemented, and Phase 4.1, 4.2, 4.4, and
 the one explicit, optional stretch left in Phase 4; giving each service's
 DB connection its own non-superuser role so RLS becomes real
 defense-in-depth again remains an open follow-up, not tied to any one
-phase.
+phase. **Phase 5 (Kind config, the umbrella + 11 per-service + 3 infra
+Helm charts, GitHub Actions CI/CD, ArgoCD GitOps) is authored, schema-validated,
+and reviewed** — see Phase 5's own paragraphs above for exactly what
+"not run against a live cluster" does and doesn't cover.
 
 The backend is a **Go workspace** (`go.work` at the repo root): `shared/`
 is its own Go module with no `internal/` in its path, so every
@@ -972,3 +1094,23 @@ inside one module (e.g. `cd services/auth-service`), the plain commands
 work as usual.
 
 `web/` is a standalone Vite app: `cd web && npm install && npm run dev`.
+
+### Kubernetes (Phase 5)
+
+The whole platform also runs on Kubernetes instead of `docker compose` —
+Kind locally, Helm for packaging, GitHub Actions + ArgoCD for CI/CD and
+GitOps. See [`deploy/helm/README.md`](deploy/helm/README.md) for the full
+setup (`kind create cluster`, `helm dependency build`, `helm install`) and
+the Status section's own Phase 5 paragraphs above for exactly what's been
+schema-validated (every chart, via `helm lint`/`helm template` +
+`kubeconform` against real Kubernetes/Strimzi/KEDA/Prometheus/ArgoCD
+schemas) versus not yet run against a live cluster in this repo's own
+development sandbox. Quick map of what's where:
+
+| Path | What |
+|---|---|
+| `deploy/kind/kind-config.yaml` | 1 control-plane + 2 worker Kind cluster |
+| `deploy/helm/meeting-intel/` | Umbrella chart — 11 service subcharts + Postgres/Redis/MinIO as dependencies |
+| `deploy/infra/{strimzi-kafka,ollama,whisper-cpp}/` | The 3 pieces with no off-the-shelf chart to depend on |
+| `.github/workflows/{ci.yaml,security.yaml}` | Per-service build/test/scan/push, weekly vuln scan |
+| `deploy/argocd/` | AppProject, infra Applications (sync-wave -1/0), the app ApplicationSet (sync-wave 2), SOPS+age secrets flow |

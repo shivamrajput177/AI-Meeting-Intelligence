@@ -1,0 +1,12 @@
+apiVersion: v2
+name: meeting-intel-common
+description: >
+  Shared Helm template helpers for every meeting-intel service subchart —
+  not deployed on its own (type: library). Standardizes
+  app.kubernetes.io/* labels and selector/name helpers so every service
+  gets consistent Prometheus scrape discovery and Grafana dashboard
+  grouping for free, per docs/architecture/kubernetes-cicd.md §2. Each
+  service subchart depends on this (see e.g.
+  ../api-gateway/Chart.yaml) and calls its templates via `include`.
+type: library
+version: 0.1.0

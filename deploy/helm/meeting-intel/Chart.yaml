@@ -1,0 +1,78 @@
+apiVersion: v2
+name: meeting-intel
+description: >
+  Umbrella chart for the whole AI Meeting Intelligence platform — see
+  docs/architecture/kubernetes-cicd.md §2. Wires the 11 application
+  service subcharts under ./charts/ plus the stateful infra this design
+  runs as dependency charts rather than hand-authored manifests
+  (Postgres, Redis, the MinIO Operator + a Tenant it manages). Strimzi
+  Kafka, Ollama, and whisper.cpp are NOT dependencies of this chart — per
+  kubernetes-cicd.md §2 they're their own standalone charts under
+  ../../infra/, installed separately (via the ArgoCD infra
+  ApplicationSet — see ../../argocd/infra-applicationset.yaml) since they
+  aren't umbrella-chart "application" concerns and each has its own
+  operator lifecycle.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+dependencies:
+  # External stateful infra — real upstream charts, not reinvented here.
+  # Run `helm dependency build` (after `helm repo add bitnami
+  # https://charts.bitnami.com/bitnami` and `helm repo add minio-operator
+  # https://operator.min.io`) before `helm install`; see
+  # ../README.md.
+  - name: postgresql
+    version: "16.x.x"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: postgresql.enabled
+  - name: redis
+    version: "20.x.x"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: redis.enabled
+  - name: operator
+    alias: minioOperator
+    version: "7.x.x"
+    repository: "https://operator.min.io"
+    condition: minioOperator.enabled
+  - name: tenant
+    alias: minioTenant
+    version: "7.x.x"
+    repository: "https://operator.min.io"
+    condition: minioTenant.enabled
+
+  # The 11 application services — local path dependencies, always on
+  # (every one of them is required for the platform to actually work;
+  # unlike the infra above there's no "bring your own" alternative).
+  - name: api-gateway
+    version: "0.1.0"
+    repository: "file://charts/api-gateway"
+  - name: auth-service
+    version: "0.1.0"
+    repository: "file://charts/auth-service"
+  - name: user-service
+    version: "0.1.0"
+    repository: "file://charts/user-service"
+  - name: organization-service
+    version: "0.1.0"
+    repository: "file://charts/organization-service"
+  - name: meeting-service
+    version: "0.1.0"
+    repository: "file://charts/meeting-service"
+  - name: transcription-service
+    version: "0.1.0"
+    repository: "file://charts/transcription-service"
+  - name: ai-summary-service
+    version: "0.1.0"
+    repository: "file://charts/ai-summary-service"
+  - name: action-item-service
+    version: "0.1.0"
+    repository: "file://charts/action-item-service"
+  - name: search-service
+    version: "0.1.0"
+    repository: "file://charts/search-service"
+  - name: notification-service
+    version: "0.1.0"
+    repository: "file://charts/notification-service"
+  - name: analytics-service
+    version: "0.1.0"
+    repository: "file://charts/analytics-service"

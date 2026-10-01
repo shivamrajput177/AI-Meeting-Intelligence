@@ -1,0 +1,75 @@
+# See deploy/helm/README.md and docs/architecture/kubernetes-cicd.md §2.
+# config/secrets below are the same dev-safe defaults as
+# deployments/configs/docker/api-gateway.json, split across the two files
+# shared/config.LoadMerged overlays (see this chart's secret.yaml's own
+# comment on why secrets stay dev-safe placeholders here, never real ones).
+global:
+  imageRegistry: ghcr.io/shivamrajput177/ai-meeting-intelligence
+  imageTag: latest
+  imagePullPolicy: IfNotPresent
+image:
+  repository: ''
+  tag: ''
+  pullPolicy: ''
+replicaCount: 1
+# NodePort by default — this is the one Kind-friendly default every other
+# service doesn't need, since api-gateway is the one public entrypoint
+# (see ../../kind/kind-config.yaml's own :8000->30080 mapping). The
+# umbrella chart's values-dev.yaml repeats this override for a local
+# `helm install` using -f values.yaml -f values-dev.yaml; values-prod.yaml
+# overrides it again to LoadBalancer for a real cluster. A GitOps install
+# (deploy/argocd/applicationset.yaml) uses this chart directly with no
+# umbrella values layered on top, so the default here is what it actually
+# gets.
+service:
+  type: NodePort
+  port: 8080
+  nodePort: 30080
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 70
+scaledObject:
+  enabled: false
+  minReplicaCount: 1
+  maxReplicaCount: 5
+  pollingInterval: 15
+  cooldownPeriod: 120
+  lagThreshold: '5'
+  bootstrapServers: meeting-intel-kafka-kafka-bootstrap.meeting-intel-data.svc.cluster.local:9092
+  triggers: []
+pdb:
+  enabled: true
+  minAvailable: 1
+  maxUnavailable: 1
+serviceMonitor:
+  enabled: true
+  path: /metrics
+  interval: 30s
+networkPolicy:
+  enabled: true
+  allowIngressFromGateway: false
+config:
+  port: '8080'
+  log_level: info
+  redis_addr: meeting-intel-redis-master.meeting-intel-data.svc.cluster.local:6379
+  auth_service_url: http://auth-service:8080
+  user_service_url: http://user-service:8080
+  org_service_url: http://organization-service:8080
+  meeting_service_url: http://meeting-service:8080
+  transcription_service_url: http://transcription-service:8080
+  ai_summary_service_url: http://ai-summary-service:8080
+  action_item_service_url: http://action-item-service:8080
+  search_service_url: http://search-service:8080
+  analytics_service_url: http://analytics-service:8080
+  notification_service_url: http://notification-service:8080
+secrets:
+  jwt_signing_key: dev-only-signing-key-change-me

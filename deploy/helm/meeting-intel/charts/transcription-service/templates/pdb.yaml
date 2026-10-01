@@ -1,0 +1,17 @@
+{{- if .Values.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "meeting-intel-common.fullname" . }}
+  labels:
+    {{- include "meeting-intel-common.labels" . | nindent 4 }}
+spec:
+  {{- if .Values.autoscaling.enabled }}
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  {{- else }}
+  maxUnavailable: {{ .Values.pdb.maxUnavailable }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "meeting-intel-common.selectorLabels" . | nindent 6 }}
+{{- end }}

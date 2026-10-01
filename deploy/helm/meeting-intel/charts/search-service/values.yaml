@@ -1,0 +1,77 @@
+# See this chart's own Chart.yaml description for the real, honest shape
+# of the api/worker split: one binary, two Deployments of the same image,
+# genuinely independent scaling knobs, but NOT genuinely independent
+# workloads — the "worker" Deployment's HTTP server sits idle (nothing
+# routes to it) and the "api" Deployment's Kafka consumer still takes its
+# share of chunk.created.v1 partitions via the shared "search-service"
+# consumer group, exactly like any other replica would. A real two-binary
+# split (an -api-only / -worker-only flag in main.go) would remove that
+# caveat; it doesn't exist in this codebase today, so this chart doesn't
+# pretend otherwise.
+global:
+  imageRegistry: ghcr.io/shivamrajput177/ai-meeting-intelligence
+  imageTag: latest
+  imagePullPolicy: IfNotPresent
+
+image:
+  repository: ""
+  tag: ""
+  pullPolicy: ""
+
+service:
+  port: 8080
+
+resources:
+  requests: { cpu: 100m, memory: 128Mi }
+  limits: { cpu: 500m, memory: 256Mi }
+
+# Same dev-safe defaults as deployments/configs/docker/search-service.json
+# — see ../api-gateway/values.yaml's identical note on config/secrets.
+config:
+  port: "8080"
+  log_level: info
+  ai_summary_service_url: http://ai-summary-service:8080
+  meeting_service_url: http://meeting-service:8080
+  ollama_url: http://ollama.meeting-intel-ai.svc.cluster.local:11434
+  ollama_embed_model: nomic-embed-text
+  ollama_chat_model: qwen2.5:7b
+  kafka_brokers:
+    - meeting-intel-kafka-kafka-bootstrap.meeting-intel-data.svc.cluster.local:9092
+
+secrets:
+  database_url: postgres://postgres:postgres@meeting-intel-postgresql.meeting-intel-data.svc.cluster.local:5432/meetingintel
+  internal_service_token: dev-internal-token
+
+api:
+  replicaCount: 1
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 70
+  pdb:
+    minAvailable: 1
+
+worker:
+  replicaCount: 1
+  scaledObject:
+    enabled: true
+    minReplicaCount: 1
+    maxReplicaCount: 5
+    pollingInterval: 15
+    cooldownPeriod: 120
+    lagThreshold: "5"
+    bootstrapServers: meeting-intel-kafka-kafka-bootstrap.meeting-intel-data.svc.cluster.local:9092
+    consumerGroup: search-service
+    topic: chunk.created.v1
+  pdb:
+    maxUnavailable: 1
+
+serviceMonitor:
+  enabled: true
+  path: /metrics
+  interval: 30s
+
+networkPolicy:
+  enabled: true
+  allowIngressFromGateway: true
