@@ -14,14 +14,23 @@ import (
 )
 
 type ConfirmUploadUseCase struct {
-	repo      repository.Repository
-	storage   storage.ObjectStorage
-	publisher events.Publisher
-	log       *logger.Logger
+	repo           repository.Repository
+	storage        storage.ObjectStorage
+	publisher      events.Publisher
+	log            *logger.Logger
+	maxUploadBytes int64
 }
 
-func NewConfirmUploadUseCase(repo repository.Repository, storage storage.ObjectStorage, publisher events.Publisher, log *logger.Logger) *ConfirmUploadUseCase {
-	return &ConfirmUploadUseCase{repo: repo, storage: storage, publisher: publisher, log: log}
+// maxUploadBytes is the Phase 7 public-demo clip-length guard (see
+// docs/architecture/deployment-demo-strategy.md §2's "≤2 min clips" rule):
+// 0 means unlimited (every non-demo deployment — Kind, docker-compose dev,
+// the config's own dev-safe default), a positive value rejects any upload
+// over that many bytes. It's a size cap standing in for a true wall-clock
+// duration cap — this service never decodes the audio, so it can't measure
+// seconds directly, only bytes; a generous size still comfortably bounds a
+// short clip across the codecs a browser's MediaRecorder actually produces.
+func NewConfirmUploadUseCase(repo repository.Repository, storage storage.ObjectStorage, publisher events.Publisher, log *logger.Logger, maxUploadBytes int64) *ConfirmUploadUseCase {
+	return &ConfirmUploadUseCase{repo: repo, storage: storage, publisher: publisher, log: log, maxUploadBytes: maxUploadBytes}
 }
 
 // ConfirmUpload verifies the object actually landed in MinIO before treating
@@ -40,8 +49,19 @@ func (uc *ConfirmUploadUseCase) ConfirmUpload(ctx context.Context, orgID, meetin
 	if err != nil {
 		return nil, err
 	}
-	if err := uc.storage.Stat(ctx, meeting.RecordingObjectKey); err != nil {
+	size, err := uc.storage.Stat(ctx, meeting.RecordingObjectKey)
+	if err != nil {
 		return nil, apperr.BadRequest("recording not found — did the upload complete?")
+	}
+	if uc.maxUploadBytes > 0 && size > uc.maxUploadBytes {
+		// Best-effort cleanup: an oversized object sitting in MinIO forever
+		// isn't harmful (the meeting row never leaves "uploaded" either way,
+		// same as the publish-failure path below), so a Delete error here is
+		// logged, not fatal to rejecting the request.
+		if delErr := uc.storage.Delete(ctx, meeting.RecordingObjectKey); delErr != nil {
+			uc.log.Error("delete oversized demo upload", "meeting_id", meetingID, "err", delErr)
+		}
+		return nil, apperr.BadRequest("recording exceeds this demo's clip-length limit — try a shorter one")
 	}
 	if err := uc.repo.Touch(ctx, orgID, meetingID); err != nil {
 		return nil, apperr.Internal("update meeting").Wrap(err)

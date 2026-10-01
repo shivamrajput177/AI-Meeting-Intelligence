@@ -35,6 +35,9 @@ type serviceConfig struct {
 	SearchServiceURL        string `json:"search_service_url"`
 	AnalyticsServiceURL     string `json:"analytics_service_url"`
 	NotificationServiceURL  string `json:"notification_service_url"`
+	// DemoMode is Phase 7's public-demo switch — see router.go's Register
+	// doc comment. false everywhere except the single-VM public demo config.
+	DemoMode bool `json:"demo_mode"`
 }
 
 func main() {
@@ -51,7 +54,7 @@ func main() {
 	jwtSecret := []byte(cfg.JWTSigningKey)
 
 	srv := httpserver.New("api-gateway", log)
-	Register(srv.Mux, initServiceURLs(cfg), jwtSecret, rdb, log)
+	Register(srv.Mux, initServiceURLs(cfg), jwtSecret, rdb, log, cfg.DemoMode)
 
 	addr := ":" + cfg.Port
 	log.Info("starting", "addr", addr)

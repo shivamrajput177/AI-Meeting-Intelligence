@@ -57,6 +57,10 @@ config:
   minio_use_ssl: false
   kafka_brokers:
   - meeting-intel-kafka-kafka-bootstrap.meeting-intel-data.svc.cluster.local:9092
+  # Phase 7's public-demo clip-length guard (see
+  # docs/architecture/deployment-demo-strategy.md §2) — 0 here since this
+  # chart targets the Kind reference cluster, never the single-VM demo.
+  max_upload_bytes: 0
 secrets:
   database_url: postgres://postgres:postgres@meeting-intel-postgresql.meeting-intel-data.svc.cluster.local:5432/meetingintel
   internal_service_token: dev-internal-token

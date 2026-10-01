@@ -72,5 +72,10 @@ config:
   search_service_url: http://search-service:8080
   analytics_service_url: http://analytics-service:8080
   notification_service_url: http://notification-service:8080
+  # Phase 7's public-demo switch (see router.go's Register doc comment) —
+  # this chart targets the Kind reference cluster, which runs the full
+  # pipeline unthrottled; the single-VM demo uses plain docker-compose, not
+  # this chart, and sets it true there instead.
+  demo_mode: false
 secrets:
   jwt_signing_key: dev-only-signing-key-change-me

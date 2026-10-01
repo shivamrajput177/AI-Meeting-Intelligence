@@ -34,8 +34,12 @@ type ServiceURLs struct {
 // else). Each pattern is registered without a method prefix so it matches
 // every HTTP method on that path (the gateway doesn't care which method a
 // route uses, only the target service does — the net/http.ServeMux
-// equivalent of Fiber's .All()).
-func Register(mux *http.ServeMux, urls ServiceURLs, jwtSecret []byte, rdb *redis.Client, log *logger.Logger) {
+// equivalent of Fiber's .All()). demoMode is Phase 7's public-demo switch
+// (see docs/architecture/deployment-demo-strategy.md §2) — false for every
+// reference deployment (local docker-compose, Kind); true only on the
+// single-VM public demo, where it adds one extra, much tighter upload
+// rate limit on top of everything below.
+func Register(mux *http.ServeMux, urls ServiceURLs, jwtSecret []byte, rdb *redis.Client, log *logger.Logger, demoMode bool) {
 	// Token-bucket limits below are expressed as (burst capacity, steady
 	// refill rate) — e.g. signup allows up to 10 back-to-back attempts,
 	// then refills at 10-per-minute after that, rather than a hard reset
@@ -45,6 +49,11 @@ func Register(mux *http.ServeMux, urls ServiceURLs, jwtSecret []byte, rdb *redis
 		signupBurst, signupPerMinute = 10, 10.0
 		loginBurst, loginPerMinute   = 20, 20.0
 		resetBurst, resetPerMinute   = 10, 10.0
+		// ~1/hour per IP, per deployment-demo-strategy.md §2's "Redis-
+		// throttled per IP (~1/hour)" rule — burst of 1 so a visitor gets
+		// exactly one upload before the hourly refill, not a free burst of
+		// several.
+		demoUploadBurst, demoUploadPerHour = 1, 1.0
 	)
 
 	mux.Handle("/api/v1/auth/signup",
@@ -97,6 +106,16 @@ func Register(mux *http.ServeMux, urls ServiceURLs, jwtSecret []byte, rdb *redis
 	protect("/api/v1/orgs/{orgId}/usage", urls.Org)
 
 	protect("/api/v1/meetings", urls.Meeting)
+	if demoMode {
+		// More specific than the path-only pattern above (net/http's
+		// ServeMux prefers a method+path pattern over a bare path pattern
+		// for a matching request as of Go 1.22's pattern routing), so only
+		// POST — the upload-intent call — gets this extra budget; GET
+		// /api/v1/meetings (listing) stays under the plain auth-only
+		// protect() above.
+		mux.Handle("POST /api/v1/meetings",
+			auth(middleware.RateLimit(rdb, "demo-meeting-upload", demoUploadBurst, demoUploadPerHour/3600)(proxy.ForwardTo(urls.Meeting))))
+	}
 	protect("/api/v1/meetings/{id}", urls.Meeting)
 	protect("/api/v1/meetings/{id}/complete-upload", urls.Meeting)
 	protect("/api/v1/meetings/{id}/status", urls.Meeting)

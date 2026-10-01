@@ -254,8 +254,12 @@ services:
 
   meeting-service:
     build: { context: .., dockerfile: deployments/Dockerfile, args: { SERVICE: meeting-service } }
+    # Parameterized (defaulting to the same path every other service hardcodes)
+    # so Phase 7's docker-compose.demo.yaml + .env.demo can point this one at
+    # deployments/configs/demo/meeting-service.json (the clip-length cap)
+    # without an override file — see deployments/configs/demo/README.md.
     volumes:
-      - "./configs/docker/meeting-service.json:/app/deployments/configs/meeting-service.json:ro"
+      - "${MEETING_SERVICE_CONFIG:-./configs/docker/meeting-service.json}:/app/deployments/configs/meeting-service.json:ro"
     ports: ["8083:8080"]
     depends_on:
       postgres: { condition: service_healthy }
@@ -277,8 +281,11 @@ services:
 
   ai-summary-service:
     build: { context: .., dockerfile: deployments/Dockerfile, args: { SERVICE: ai-summary-service } }
+    # See meeting-service's identical note above — the demo overlay points
+    # this at deployments/configs/demo/ai-summary-service.json for the
+    # smaller qwen2.5:3b model.
     volumes:
-      - "./configs/docker/ai-summary-service.json:/app/deployments/configs/ai-summary-service.json:ro"
+      - "${AI_SUMMARY_SERVICE_CONFIG:-./configs/docker/ai-summary-service.json}:/app/deployments/configs/ai-summary-service.json:ro"
     ports: ["8085:8080"]
     depends_on:
       postgres: { condition: service_healthy }
@@ -290,8 +297,9 @@ services:
 
   action-item-service:
     build: { context: .., dockerfile: deployments/Dockerfile, args: { SERVICE: action-item-service } }
+    # See meeting-service's identical note above.
     volumes:
-      - "./configs/docker/action-item-service.json:/app/deployments/configs/action-item-service.json:ro"
+      - "${ACTION_ITEM_SERVICE_CONFIG:-./configs/docker/action-item-service.json}:/app/deployments/configs/action-item-service.json:ro"
     ports: ["8086:8080"]
     depends_on:
       postgres: { condition: service_healthy }
@@ -304,8 +312,9 @@ services:
 
   search-service:
     build: { context: .., dockerfile: deployments/Dockerfile, args: { SERVICE: search-service } }
+    # See meeting-service's identical note above.
     volumes:
-      - "./configs/docker/search-service.json:/app/deployments/configs/search-service.json:ro"
+      - "${SEARCH_SERVICE_CONFIG:-./configs/docker/search-service.json}:/app/deployments/configs/search-service.json:ro"
     ports: ["8087:8080"]
     depends_on:
       postgres: { condition: service_healthy }
@@ -346,8 +355,10 @@ services:
 
   api-gateway:
     build: { context: .., dockerfile: deployments/Dockerfile, args: { SERVICE: api-gateway } }
+    # See meeting-service's identical note above — the demo overlay points
+    # this at deployments/configs/demo/api-gateway.json (demo_mode: true).
     volumes:
-      - "./configs/docker/api-gateway.json:/app/deployments/configs/api-gateway.json:ro"
+      - "${API_GATEWAY_CONFIG:-./configs/docker/api-gateway.json}:/app/deployments/configs/api-gateway.json:ro"
     ports: ["8000:8080"]
     depends_on:
       redis: { condition: service_healthy }

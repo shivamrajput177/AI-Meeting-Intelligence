@@ -1,0 +1,85 @@
+# Phase 7 public-demo overlay (docs/architecture/deployment-demo-strategy.md
+# §2) — layered on top of the base docker-compose.yaml via multiple -f
+# flags, never run standalone:
+#
+#   docker compose -f deployments/docker-compose.yaml \
+#                   -f deployments/docker-compose.demo.yaml \
+#                   --env-file deployments/.env.demo up -d --build
+#
+# (deployments/.env.demo.template has every variable this file reads, with
+# docker-compose.yaml's own matching `${VAR:-default}` fallbacks — see that
+# base file's per-service comments on why five of its config-volume mounts
+# are parameterized instead of hardcoded.)
+#
+# What this file changes vs. the base stack, and why — see
+# deployment-demo-strategy.md §2's comparison table for the full picture:
+#   - Smaller Ollama models (qwen2.5:3b, not 7b) — fast enough on a shared
+#     VM's CPU. The model swap itself happens in
+#     deployments/configs/demo/{ai-summary,action-item,search}-service.json
+#     (via the base file's parameterized volume mounts); this file only
+#     needs to change which models ollama-model-init pulls.
+#   - A `cloudflared` sidecar for free HTTPS + a subdomain with no
+#     port-forwarding or domain purchase — see
+#     deployments/cloudflared/README.md for the one-time tunnel setup this
+#     depends on. It reaches `web`/`api-gateway` over the compose network by
+#     service name, the same way every other service here already does,
+#     so none of their ports need publishing to the host for the tunnel to
+#     work (the existing host-port mappings stay, for an operator's own
+#     SSH-tunneled debugging, but aren't on the public path).
+#   - web's build-time API base URL points at the public hostname instead
+#     of localhost (see web/Dockerfile's own note on why this must be a
+#     build arg, baked into the static JS bundle, not a runtime env var).
+#   - Light memory ceilings on the three heaviest components (Ollama,
+#     whisper.cpp, Postgres) — docs/COST_RESOURCE_AUDIT.md's own finding is
+#     that Ollama is the dominant cost; this is a safety net against one
+#     runaway container starving the others on a shared VM, not the
+#     primary size-trimming lever (the smaller model is).
+#
+# NOT built here, and said plainly rather than silently skipped: this file
+# was authored and validated with `docker compose config` + `docker compose
+# -f ... config --quiet` in this project's own development sandbox, which
+# has no Docker daemon and no reachable cloud VM — so it has never actually
+# been run against a live Oracle Cloud instance. See
+# docs/runbooks/demo-vm-provisioning.md's own header for the same honest
+# disclosure applied to the VM-provisioning steps this file assumes.
+services:
+  ollama-model-init:
+    environment:
+      OLLAMA_HOST: "http://ollama:11434"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        ollama pull qwen2.5:3b
+        ollama pull nomic-embed-text
+
+  # Demo-sized resource ceilings (see this file's header). `mem_limit`/`cpus`
+  # are the legacy top-level Compose fields, deliberately used instead of
+  # `deploy.resources.limits` — the Compose Spec defines `deploy.*` as a
+  # swarm-mode construct, and a plain `docker compose up` on a single VM
+  # (no swarm) is exactly the case this file targets.
+  ollama:
+    mem_limit: 6g
+  whisper:
+    mem_limit: 1500m
+  postgres:
+    mem_limit: 1g
+
+  web:
+    build:
+      args:
+        VITE_API_BASE_URL: ${DEMO_API_BASE_URL:-http://localhost:8000/api/v1}
+
+  # Reaches Cloudflare's edge outbound (no inbound port to open or forward)
+  # and proxies back to `web`/`api-gateway` by their compose service names —
+  # see deployments/cloudflared/README.md for creating the tunnel and
+  # getting TUNNEL_TOKEN in the first place. Token-based `tunnel run` needs
+  # no credentials.json file mounted, unlike the config-file-based form.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN in deployments/.env.demo — see deployments/cloudflared/README.md}
+    depends_on:
+      - web
+      - api-gateway

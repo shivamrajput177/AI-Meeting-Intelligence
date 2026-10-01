@@ -21,7 +21,7 @@ hand-written REST/JSON; there's no gRPC or protobuf codegen anywhere in
 this design (see `docs/architecture/microservices.md` §"Internal
 Communication" for why).
 
-## Status: Phase 1 (MVP) implemented, Phase 2 (2.1–2.7) fully implemented, Phase 3 (3.1–3.5) fully implemented, Phase 4 (4.1, 4.2, 4.4, 4.5 — 4.3 is an explicit, still-skipped stretch item) implemented, Phase 5 (5.1–5.5, Kubernetes/Helm/CI-CD/GitOps) and Phase 6 (observability, security hardening, DR, chaos, cost) authored and reviewed, not yet run against a live cluster — see Phase 5 and Phase 6's own paragraphs below for exactly what that split means
+## Status: Phase 1 (MVP) implemented, Phase 2 (2.1–2.7) fully implemented, Phase 3 (3.1–3.5) fully implemented, Phase 4 (4.1, 4.2, 4.4, 4.5 — 4.3 is an explicit, still-skipped stretch item) implemented, Phase 5 (5.1–5.5, Kubernetes/Helm/CI-CD/GitOps), Phase 6 (observability, security hardening, DR, chaos, cost), and Phase 7 (public-demo docker-compose overlay, Cloudflare Tunnel, demo-mode upload guardrails, seeding script) all authored and reviewed, not yet run against a live cluster or a live VM — see Phase 5/6/7's own paragraphs below for exactly what that split means
 
 Auth, User, Organization, and Meeting services, the API Gateway, and a
 React web app are built and running — signup, login, JWT refresh/rotation,
@@ -1209,3 +1209,60 @@ development sandbox. Quick map of what's where:
 | `docs/COST_RESOURCE_AUDIT.md` | Computed laptop-fit audit (13.12Gi req / 22.25Gi lim), Phase 6 |
 | `docs/runbooks/{dr-restore,chaos-test-findings,incident-response}.md` | Written, not yet executed — Phase 6 |
 | `scripts/chaos-test.sh` | Real, runnable chaos test tool — Phase 6 |
+
+### Public Demo Deployment (Phase 7)
+
+The reference architecture above (Kind, Kafka, ArgoCD, KEDA) is what proves
+this is a real distributed system; it's deliberately not what a recruiter
+clicking a resume link would run themselves. Phase 7 is the separate,
+cost-trimmed single-VM deployment path for that — see
+`docs/architecture/deployment-demo-strategy.md` §2 for the full reasoning
+behind every trade-off below, and this project's now-familiar honest
+disclosure: **everything here is real, runnable code and config, validated
+with `docker compose config` in this sandbox — none of it has been run
+against an actual Oracle Cloud VM, a real Cloudflare account, or a real
+public domain**, because this development sandbox has none of those three
+and no credentials to obtain them. This is the same category of gap Phase
+6's DR/chaos tasks disclosed, one level up: there, the blocker was "no live
+Kubernetes cluster"; here, it's "no live cloud account."
+
+What changes vs. local `docker compose` dev, and why — see
+`deployment-demo-strategy.md` §2's own comparison table for the complete
+picture:
+
+- **Smaller local LLM** (`qwen2.5:3b` instead of `7b`) — fast enough on a
+  shared VM's CPU, still a real local model.
+- **Cloudflare Tunnel** instead of a port-forwarded/self-signed HTTPS setup
+  — free HTTPS + a subdomain with no inbound port ever opened on the VM.
+- **A real, enforced demo-mode guardrail pair** (not just documentation):
+  `services/api-gateway/router.go`'s `Register` wires an extra ~1/hour-per-IP
+  token-bucket limit onto `POST /api/v1/meetings` when `demo_mode: true`,
+  and `services/meeting-service/usecase/confirm_upload.go`'s
+  `ConfirmUploadUseCase` rejects (and deletes) any uploaded object over a
+  configured size cap — a practical proxy for "≤2 min clips" since this
+  service never decodes audio to measure true duration. Both default off
+  (`demo_mode: false`, `max_upload_bytes: 0`) everywhere except
+  `deployments/configs/demo/*.json`.
+- **A seeding script that uses the real API**, not direct DB inserts —
+  `scripts/seed-demo-org.sh` signs up, uploads, and polls exactly the way a
+  real browser does, so the demo org's sample meetings are genuinely
+  pipeline-processed, not fabricated rows. It needs real short sample audio
+  files this repo doesn't ship (see
+  `deployments/demo-seed/samples/README.md`'s own honest note on why).
+- **`MockJiraProvider` as the demo org's default** (already true since
+  Phase 4 — `org.integration_configs.ticket_provider` defaults to
+  `mock_jira` at the schema level) — `GET /demo/board` needs no login, so
+  the flagship "action item → ticket" loop is visible to a stranger with no
+  Jira account.
+
+Quick map of what's where:
+
+| Path | What |
+|---|---|
+| `deployments/docker-compose.demo.yaml` | Overlay on the base compose file — smaller models, resource ceilings, `cloudflared` sidecar, web's public API base URL |
+| `deployments/configs/demo/*.json` | The 5 configs that differ from local dev (`demo_mode`, `max_upload_bytes`, smaller Ollama models) — see its own README |
+| `deployments/.env.demo.template` | Copy to `.env.demo` (gitignored) and fill in a real Cloudflare tunnel token + public hostname |
+| `deployments/cloudflared/README.md` | One-time tunnel creation/DNS/token steps (real Cloudflare CLI commands, not run here) |
+| `docs/runbooks/demo-vm-provisioning.md` | Oracle Cloud Free Tier VM setup end-to-end, not yet executed |
+| `scripts/seed-demo-org.sh` | Real API-driven demo-org seeding, needs operator-supplied sample audio |
+| `deployments/demo-seed/samples/` | Where those sample recordings go (empty in this repo, by necessity) |

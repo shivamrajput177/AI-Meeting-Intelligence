@@ -1,17 +1,17 @@
 {
-  "port": "8083",
+  "port": "8080",
   "log_level": "info",
   "otel_collector_endpoint": "",
-  "database_url": "postgres://postgres:postgres@localhost:5432/meetingintel",
-  "minio_internal_endpoint": "localhost:9000",
+  "database_url": "postgres://postgres:postgres@postgres:5432/meetingintel",
+  "minio_internal_endpoint": "minio:9000",
   "minio_public_endpoint": "localhost:9000",
   "minio_access_key": "minioadmin",
   "minio_secret_key": "minioadmin",
   "minio_bucket": "recordings",
   "minio_use_ssl": false,
   "kafka_brokers": [
-    "localhost:29092"
+    "kafka:9092"
   ],
   "internal_service_token": "dev-internal-token",
-  "max_upload_bytes": 0
+  "max_upload_bytes": 26214400
 }

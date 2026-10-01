@@ -12,5 +12,6 @@
   "kafka_brokers": [
     "kafka:9092"
   ],
-  "internal_service_token": "dev-internal-token"
+  "internal_service_token": "dev-internal-token",
+  "max_upload_bytes": 0
 }

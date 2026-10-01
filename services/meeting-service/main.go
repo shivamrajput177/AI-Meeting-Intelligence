@@ -42,6 +42,10 @@ type serviceConfig struct {
 	MinIOUseSSL           bool     `json:"minio_use_ssl"`
 	KafkaBrokers          []string `json:"kafka_brokers"`
 	InternalServiceToken  string   `json:"internal_service_token"`
+	// MaxUploadBytes is Phase 7's public-demo clip-length guard — 0 (every
+	// non-demo config) means unlimited. See ConfirmUploadUseCase's doc
+	// comment for why this is a size cap, not a true duration cap.
+	MaxUploadBytes int64 `json:"max_upload_bytes"`
 }
 
 func main() {
@@ -68,7 +72,7 @@ func main() {
 	updateStatus := usecase.NewUpdateStatusUseCase(repo, publisher, log)
 	handler := NewHandler(
 		usecase.NewCreateUploadIntentUseCase(repo, storage),
-		usecase.NewConfirmUploadUseCase(repo, storage, publisher, log),
+		usecase.NewConfirmUploadUseCase(repo, storage, publisher, log, cfg.MaxUploadBytes),
 		usecase.NewGetMeetingUseCase(repo),
 		usecase.NewListMeetingsUseCase(repo),
 		updateStatus,

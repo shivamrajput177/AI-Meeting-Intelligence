@@ -10,6 +10,10 @@ import "context"
 
 type ObjectStorage interface {
 	PresignedPutURL(ctx context.Context, objectKey string) (url string, err error)
-	Stat(ctx context.Context, objectKey string) error
+	// Stat returns the object's size in bytes — ConfirmUploadUseCase uses
+	// it both to confirm the upload landed at all and, in the public demo
+	// deployment (Phase 7), to enforce a size cap as a practical proxy for
+	// a clip-length limit. See that usecase's doc comment for why.
+	Stat(ctx context.Context, objectKey string) (sizeBytes int64, err error)
 	Delete(ctx context.Context, objectKey string) error
 }

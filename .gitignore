@@ -10,6 +10,11 @@ web/.vite/
 .env
 .env.local
 
+# Phase 7 public-demo secrets (Cloudflare tunnel token, real demo hostname)
+# — deployments/.env.demo.template is the checked-in, fillable-in-place
+# version; see deployments/docker-compose.demo.yaml's header.
+deployments/.env.demo
+
 # Real service configs — copied from
 # deployments/configs/*.template.json and filled in with real values, so
 # only the templates are checked in. (deployments/configs/docker/*.json
@@ -20,6 +25,12 @@ deployments/configs/*.json
 # Downloaded whisper.cpp GGML model files — see
 # deployments/whisper-models/README.md.
 deployments/whisper-models/*.bin
+
+# Real demo sample recordings an operator drops in before running
+# scripts/seed-demo-org.sh — see deployments/demo-seed/samples/README.md.
+# Never this repo's to ship or commit.
+deployments/demo-seed/samples/*
+!deployments/demo-seed/samples/README.md
 
 # Editor/OS
 .DS_Store

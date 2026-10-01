@@ -78,9 +78,12 @@ func (c *Client) PresignedPutURL(ctx context.Context, objectKey string) (string,
 	return u.String(), nil
 }
 
-func (c *Client) Stat(ctx context.Context, objectKey string) error {
-	_, err := c.internal.StatObject(ctx, c.bucket, objectKey, minio.StatObjectOptions{})
-	return err
+func (c *Client) Stat(ctx context.Context, objectKey string) (int64, error) {
+	info, err := c.internal.StatObject(ctx, c.bucket, objectKey, minio.StatObjectOptions{})
+	if err != nil {
+		return 0, err
+	}
+	return info.Size, nil
 }
 
 func (c *Client) Delete(ctx context.Context, objectKey string) error {

@@ -14,5 +14,5 @@
   "search_service_url": "http://search-service:8080",
   "analytics_service_url": "http://analytics-service:8080",
   "notification_service_url": "http://notification-service:8080",
-  "demo_mode": false
+  "demo_mode": true
 }
