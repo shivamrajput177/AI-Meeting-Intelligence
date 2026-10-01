@@ -1,0 +1,119 @@
+# Values for the four external dependency charts in Chart.yaml. Unlike
+# this repo's own templates/ (schema-validated — see ../../helm/README.md's
+# equivalent note), these blocks could NOT be checked against
+# `helm show values <chart>` for the pinned versions above: this sandbox's
+# egress policy blocks prometheus-community.github.io/grafana.github.io/
+# open-telemetry.github.io, same as it blocked charts.bitnami.com and
+# operator.min.io for the Phase 5 umbrella chart. The field names below are
+# long-stable ones for each chart, but run `helm show values <chart>
+# --version <pinned-version>` yourself before a real install to confirm
+# nothing's drifted.
+
+kube-prometheus-stack:
+  enabled: true
+  grafana:
+    enabled: true
+    # Dev-safe default — same philosophy as deployments/configs/*.template.json.
+    # Override via a separate, gitignored values file for anything real.
+    adminPassword: admin
+    sidecar:
+      dashboards:
+        enabled: true
+        label: grafana_dashboard # ConfigMaps under ./dashboards carry this label — auto-provisioned, no manual import
+      datasources:
+        enabled: true
+        label: grafana_datasource
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { cpu: 500m, memory: 256Mi }
+  alertmanager:
+    enabled: true
+    alertmanagerSpec:
+      resources:
+        requests: { cpu: 50m, memory: 64Mi }
+        limits: { cpu: 200m, memory: 128Mi }
+  prometheus:
+    prometheusSpec:
+      # Without this, kube-prometheus-stack's Prometheus CR only selects
+      # ServiceMonitors carrying a `release: <this-helm-release-name>`
+      # label (serviceMonitorSelectorNilUsesHelmValues defaults to true).
+      # Every service chart's own ServiceMonitor (Phase 5) uses this
+      # project's own meeting-intel-common labels, not that one — setting
+      # this false is what makes Prometheus actually scrape them, and the
+      # new kafka-exporter/postgres-exporter ServiceMonitors below, without
+      # retrofitting a Helm-release label onto 11 already-written charts.
+      serviceMonitorSelectorNilUsesHelmValues: false
+      ruleSelectorNilUsesHelmValues: false
+      resources:
+        requests: { cpu: 250m, memory: 512Mi }
+        limits: { cpu: "1", memory: 1Gi }
+      retention: 7d # laptop-sized — see kubernetes-cicd.md §1's budget table
+
+loki-stack:
+  enabled: true
+  loki:
+    enabled: true
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+  promtail:
+    enabled: true
+    resources:
+      requests: { cpu: 50m, memory: 64Mi }
+      limits: { cpu: 200m, memory: 128Mi }
+
+tempo:
+  enabled: true
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+
+opentelemetry-collector:
+  enabled: true
+  mode: deployment
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 256Mi }
+  config:
+    receivers:
+      otlp:
+        protocols:
+          http: {} # every service exports OTLP/HTTP only — see shared/httpserver's otelhttp wiring; no gRPC receiver needed
+    exporters:
+      otlphttp/tempo:
+        endpoint: http://observability-tempo.observability.svc.cluster.local:4318
+      prometheusremotewrite:
+        endpoint: http://observability-kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090/api/v1/write
+      loki:
+        endpoint: http://observability-loki-stack.observability.svc.cluster.local:3100/loki/api/v1/push
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          exporters: [otlphttp/tempo]
+        metrics:
+          receivers: [otlp]
+          exporters: [prometheusremotewrite]
+        logs:
+          receivers: [otlp]
+          exporters: [loki]
+
+# kafka-exporter / postgres-exporter — this chart's own templates/, not a
+# dependency (no app-specific config a generic exporter chart would know
+# about: which Postgres DSN, which Kafka brokers).
+kafkaExporter:
+  image: danielqsj/kafka-exporter:latest
+  kafkaBrokers: "meeting-intel-kafka-kafka-bootstrap.meeting-intel-data.svc.cluster.local:9092"
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 200m, memory: 128Mi }
+
+postgresExporter:
+  image: quay.io/prometheuscommunity/postgres-exporter:latest
+  # Same dev-safe DSN as every service chart's own secrets.database_url
+  # default (see e.g. deploy/helm/meeting-intel/charts/auth-service/values.yaml) —
+  # override alongside those for anything real.
+  dataSourceURL: "postgresql://postgres:postgres@meeting-intel-postgresql.meeting-intel-data.svc.cluster.local:5432/meetingintel?sslmode=disable"
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 200m, memory: 128Mi }

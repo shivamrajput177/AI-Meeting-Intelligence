@@ -1,6 +1,7 @@
 {
   "port": "8087",
   "log_level": "info",
+  "otel_collector_endpoint": "",
   "database_url": "postgres://postgres:postgres@localhost:5432/meetingintel",
   "ai_summary_service_url": "http://localhost:8085",
   "meeting_service_url": "http://localhost:8083",
@@ -8,5 +9,7 @@
   "ollama_url": "http://localhost:11434",
   "ollama_embed_model": "nomic-embed-text",
   "ollama_chat_model": "qwen2.5:7b",
-  "kafka_brokers": ["localhost:29092"]
+  "kafka_brokers": [
+    "localhost:29092"
+  ]
 }

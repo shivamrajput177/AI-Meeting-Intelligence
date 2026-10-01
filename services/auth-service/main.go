@@ -22,6 +22,7 @@ import (
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/dbx"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/httpserver"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/logger"
+	"github.com/shivamrajput177/ai-meeting-intelligence/shared/tracing"
 )
 
 // serviceConfig is auth-service's whole configuration surface — see
@@ -29,6 +30,7 @@ import (
 type serviceConfig struct {
 	Port                    string `json:"port"`
 	LogLevel                string `json:"log_level"`
+	OtelCollectorEndpoint   string `json:"otel_collector_endpoint"`
 	DatabaseURL             string `json:"database_url"`
 	InternalServiceToken    string `json:"internal_service_token"`
 	OrgServiceURL           string `json:"org_service_url"`
@@ -42,6 +44,12 @@ type serviceConfig struct {
 func main() {
 	cfg := loadConfig()
 	log := logger.New("auth-service", logger.ParseLevel(cfg.LogLevel))
+	shutdownTracing, err := tracing.Init(context.Background(), "auth-service", cfg.OtelCollectorEndpoint)
+	if err != nil {
+		log.Error("init tracing", "err", err)
+	} else {
+		defer func() { _ = shutdownTracing(context.Background()) }()
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

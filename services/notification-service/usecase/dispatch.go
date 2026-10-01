@@ -14,6 +14,7 @@ import (
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/slack"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/ticketprovider"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/logger"
+	"github.com/shivamrajput177/ai-meeting-intelligence/shared/metrics"
 )
 
 // DispatchUseCase is the poller half of the transactional outbox pattern
@@ -75,6 +76,7 @@ func (uc *DispatchUseCase) dispatchOne(ctx context.Context, row entity.OutboxRow
 		}
 		if permanent {
 			uc.log.Error("giving up on notification", "outbox_id", row.ID, "channel", row.Channel, "attempts", attempts, "err", err)
+			metrics.NotificationFailedTotal.WithLabelValues(row.Channel).Inc()
 			if pubErr := uc.publisher.PublishNotificationFailed(ctx, entity.NotificationFailedEvent{
 				OutboxID: row.ID, OrgID: row.OrgID, Channel: row.Channel, Reason: err.Error(),
 			}); pubErr != nil {

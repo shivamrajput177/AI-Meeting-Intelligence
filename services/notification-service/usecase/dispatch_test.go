@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
+
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/entity"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/orgs"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/notification-service/ticketprovider"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/logger"
+	"github.com/shivamrajput177/ai-meeting-intelligence/shared/metrics"
 )
 
 func marshalSlack(t *testing.T, text string) []byte {
@@ -176,11 +179,19 @@ func TestDispatchBatch_GivesUpAfterMaxAttempts(t *testing.T) {
 	d := dispatchDeps{repo: repo, jiraRepo: &fakeJiraRepository{}, slack: &fakeSlackSender{err: errFake}, email: &fakeEmailSender{}, ticketProvider: &fakeTicketProvider{}, actionItems: &fakeActionItemsClient{}, pub: &fakePublisher{}}
 	uc := newDispatchUseCase(d, "url")
 
+	before := testutil.ToFloat64(metrics.NotificationFailedTotal.WithLabelValues(entity.ChannelSlack))
+
 	if _, err := uc.DispatchBatch(context.Background(), 20); err != nil {
 		t.Fatalf("DispatchBatch: %v", err)
 	}
 	if len(d.pub.failed) != 1 || d.pub.failed[0].OutboxID != "row-4" {
 		t.Fatalf("expected notification.failed.v1 published for row-4, got %+v", d.pub.failed)
+	}
+	// Phase 6: the same permanent-failure path backs the
+	// NotificationDLQDepthNonZero alert's own metric.
+	after := testutil.ToFloat64(metrics.NotificationFailedTotal.WithLabelValues(entity.ChannelSlack))
+	if after != before+1 {
+		t.Fatalf("expected notification_failed_total{channel=%q} to increment by 1, got %v -> %v", entity.ChannelSlack, before, after)
 	}
 }
 

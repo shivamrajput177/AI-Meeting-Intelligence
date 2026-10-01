@@ -143,7 +143,7 @@ func TestExtractActionItemsUseCase_ExtractActionItems(t *testing.T) {
 	repo := &fakeRepository{}
 	publisher := &fakePublisher{}
 
-	uc := usecase.NewExtractActionItemsUseCase(summaryClient, participantsClient, extractor, repo, publisher, logger.New("test", logger.LevelError))
+	uc := usecase.NewExtractActionItemsUseCase(summaryClient, participantsClient, extractor, repo, publisher, logger.New("test", logger.LevelError), "qwen2.5:7b")
 	items, err := uc.ExtractActionItems(context.Background(), "org-1", "meeting-1")
 	if err != nil {
 		t.Fatalf("ExtractActionItems: %v", err)
@@ -195,7 +195,7 @@ func TestExtractActionItemsUseCase_ExtractActionItems_SummaryFetchFailure(t *tes
 	uc := usecase.NewExtractActionItemsUseCase(
 		&fakeSummaryClient{err: errors.New("ai-summary-service unreachable")},
 		&fakeParticipantsClient{}, &fakeExtractor{}, &fakeRepository{}, publisher,
-		logger.New("test", logger.LevelError),
+		logger.New("test", logger.LevelError), "qwen2.5:7b",
 	)
 
 	if _, err := uc.ExtractActionItems(context.Background(), "org-1", "meeting-1"); err == nil {
@@ -213,7 +213,7 @@ func TestExtractActionItemsUseCase_ExtractActionItems_ExtractionFailure(t *testi
 	summaryClient := &fakeSummaryClient{summary: &entity.Summary{MeetingID: "meeting-1", SummaryText: "hello"}}
 	uc := usecase.NewExtractActionItemsUseCase(
 		summaryClient, &fakeParticipantsClient{}, &fakeExtractor{err: errors.New("ollama unreachable")},
-		&fakeRepository{}, &fakePublisher{}, logger.New("test", logger.LevelError),
+		&fakeRepository{}, &fakePublisher{}, logger.New("test", logger.LevelError), "qwen2.5:7b",
 	)
 
 	if _, err := uc.ExtractActionItems(context.Background(), "org-1", "meeting-1"); err == nil {

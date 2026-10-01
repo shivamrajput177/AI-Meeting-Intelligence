@@ -11,16 +11,18 @@ import (
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/search-service/entity"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/search-service/llm"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/search-service/repository"
+	"github.com/shivamrajput177/ai-meeting-intelligence/shared/metrics"
 )
 
 type AskUseCase struct {
-	search   *SearchUseCase
-	answerer llm.Answerer
-	repo     repository.Repository
+	search    *SearchUseCase
+	answerer  llm.Answerer
+	repo      repository.Repository
+	modelUsed string
 }
 
-func NewAskUseCase(search *SearchUseCase, answerer llm.Answerer, repo repository.Repository) *AskUseCase {
-	return &AskUseCase{search: search, answerer: answerer, repo: repo}
+func NewAskUseCase(search *SearchUseCase, answerer llm.Answerer, repo repository.Repository, modelUsed string) *AskUseCase {
+	return &AskUseCase{search: search, answerer: answerer, repo: repo, modelUsed: modelUsed}
 }
 
 type AskResult struct {
@@ -51,16 +53,21 @@ type Citation struct {
 // favor of a simpler, always-correct-if-slightly-generous guarantee: every
 // citation shown genuinely was in the context the model saw.
 func (uc *AskUseCase) Ask(ctx context.Context, orgID, userID, question string) (*AskResult, error) {
+	start := time.Now()
+	defer func() { metrics.RAGQueryDurationSeconds.Observe(time.Since(start).Seconds()) }()
+
 	results, err := uc.search.Search(ctx, orgID, question)
 	if err != nil {
 		return nil, fmt.Errorf("retrieve context: %w", err)
 	}
 
 	groundedContext, citations, chunkIDs := buildContext(results)
+	llmStart := time.Now()
 	answer, err := uc.answerer.Answer(ctx, question, groundedContext)
 	if err != nil {
 		return nil, fmt.Errorf("ollama answer: %w", err)
 	}
+	metrics.LLMCallDurationSeconds.WithLabelValues(uc.modelUsed).Observe(time.Since(llmStart).Seconds())
 
 	entry := &entity.QAHistoryEntry{
 		ID: uuid.NewString(), OrgID: orgID, UserID: userID,

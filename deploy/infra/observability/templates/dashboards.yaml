@@ -1,0 +1,25 @@
+# One ConfigMap per file under ../dashboards/*.json, each labeled
+# grafana_dashboard: "1" — kube-prometheus-stack's bundled Grafana runs a
+# sidecar (enabled via values.yaml's grafana.sidecar.dashboards.enabled)
+# that watches for exactly this label and auto-imports any ConfigMap
+# carrying it, cluster-wide, no manual "upload this JSON" step. Dashboard
+# PromQL queries reference this project's own metric names from
+# shared/metrics (RED + business) plus kafka-exporter/postgres-exporter's
+# standard metric names (kafka_consumergroup_lag, pg_stat_activity_count,
+# etc.) — not screenshotted against a live Grafana anywhere (see
+# README.md's Phase 6 status note), so treat panel layout as reviewed-but-
+# unrendered rather than pixel-verified.
+{{- range $path, $_ := .Files.Glob "dashboards/*.json" }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dashboard-{{ base $path | trimSuffix ".json" }}
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: meeting-intel
+data:
+  {{ base $path }}: |
+    {{- $.Files.Get $path | nindent 4 }}
+{{- end }}

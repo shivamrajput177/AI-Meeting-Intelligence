@@ -1,13 +1,28 @@
 {{- if .Values.networkPolicy.enabled }}
 # Default-deny + explicit allow, per kubernetes-cicd.md §1 — any
 # NetworkPolicy selecting a pod makes every direction default-deny for it
-# except what's listed below. Egress is allowed at namespace granularity
-# (meeting-intel/meeting-intel-data/meeting-intel-ai) rather than a
-# precise per-service allow-list of exactly which Postgres/Kafka/
-# Redis/MinIO/Ollama/whisper.cpp/other-service dependency each service
-# actually calls — Phase 6's own "security hardening pass" task is where
-# that tightening belongs (its task list names NetworkPolicies again,
-# deliberately), not duplicated here.
+# except what's listed below.
+#
+# Phase 6 security hardening pass: egress is now port-scoped per
+# destination namespace (the finite, known set of ports anything in that
+# namespace actually listens on — Postgres 5432, Kafka 9092, Redis 6379,
+# MinIO 9000 in meeting-intel-data; Ollama 11434, whisper.cpp 8080 in
+# meeting-intel-ai; every other app service's own HTTP port in
+# meeting-intel) rather than Phase 5's original wide-open "any port in
+# this namespace." A still-more-precise per-service-pair allow-list (e.g.
+# "only auth-service may reach Postgres's port, api-gateway never needs
+# to") remains a real, named, not-yet-done refinement — the trade-off
+# against hand-maintaining 11 different egress lists instead of one
+# shared template, left for whenever this chart's generic/per-service
+# split itself gets revisited, not fabricated here as already done.
+#
+# Also new in Phase 6: egress to the observability namespace on 4318
+# (OTLP/HTTP) — every service now exports traces there (see
+# shared/tracing), and Phase 5's original rule only ever allowed INGRESS
+# from observability (Prometheus scraping /metrics), never egress to it.
+# Without this rule, tracing would silently blackhole at the NetworkPolicy
+# the moment Phase 6's otel-collector was deployed — caught and fixed in
+# this same pass rather than shipped broken.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -53,12 +68,36 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: meeting-intel
+      ports:
+        - port: 8080
+          protocol: TCP
     - to:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: meeting-intel-data
+      ports:
+        - port: 5432
+          protocol: TCP
+        - port: 9092
+          protocol: TCP
+        - port: 6379
+          protocol: TCP
+        - port: 9000
+          protocol: TCP
     - to:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: meeting-intel-ai
+      ports:
+        - port: 11434
+          protocol: TCP
+        - port: 8080
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - port: 4318
+          protocol: TCP
 {{- end }}

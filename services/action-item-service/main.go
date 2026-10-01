@@ -25,26 +25,34 @@ import (
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/httpserver"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/kafkax"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/logger"
+	"github.com/shivamrajput177/ai-meeting-intelligence/shared/tracing"
 )
 
 // serviceConfig is Action Item Service's whole configuration surface —
 // see configs/action-item-service.template.json for the shape and
 // dev-safe defaults.
 type serviceConfig struct {
-	Port                 string   `json:"port"`
-	LogLevel             string   `json:"log_level"`
-	DatabaseURL          string   `json:"database_url"`
-	SummaryServiceURL    string   `json:"summary_service_url"`
-	MeetingServiceURL    string   `json:"meeting_service_url"`
-	InternalServiceToken string   `json:"internal_service_token"`
-	OllamaURL            string   `json:"ollama_url"`
-	OllamaModel          string   `json:"ollama_model"`
-	KafkaBrokers         []string `json:"kafka_brokers"`
+	Port                  string   `json:"port"`
+	LogLevel              string   `json:"log_level"`
+	OtelCollectorEndpoint string   `json:"otel_collector_endpoint"`
+	DatabaseURL           string   `json:"database_url"`
+	SummaryServiceURL     string   `json:"summary_service_url"`
+	MeetingServiceURL     string   `json:"meeting_service_url"`
+	InternalServiceToken  string   `json:"internal_service_token"`
+	OllamaURL             string   `json:"ollama_url"`
+	OllamaModel           string   `json:"ollama_model"`
+	KafkaBrokers          []string `json:"kafka_brokers"`
 }
 
 func main() {
 	cfg := loadConfig()
 	log := logger.New("action-item-service", logger.ParseLevel(cfg.LogLevel))
+	shutdownTracing, err := tracing.Init(context.Background(), "action-item-service", cfg.OtelCollectorEndpoint)
+	if err != nil {
+		log.Error("init tracing", "err", err)
+	} else {
+		defer func() { _ = shutdownTracing(context.Background()) }()
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -59,7 +67,7 @@ func main() {
 	defer func() { _ = publisher.Close() }()
 
 	repo := actionitempg.NewActionItemRepository(pool)
-	extract := usecase.NewExtractActionItemsUseCase(summaryC, participantsC, extractor, repo, publisher, log)
+	extract := usecase.NewExtractActionItemsUseCase(summaryC, participantsC, extractor, repo, publisher, log, cfg.OllamaModel)
 	handler := NewHandler(
 		usecase.NewGetActionItemUseCase(repo),
 		usecase.NewListActionItemsByMeetingUseCase(repo),

@@ -1,0 +1,33 @@
+apiVersion: v2
+name: observability
+description: >
+  The full observability stack for Phase 6
+  (docs/architecture/observability-security.md §1): Prometheus + Grafana +
+  Alertmanager (via kube-prometheus-stack, which also supplies the
+  Prometheus Operator CRDs every service chart's own ServiceMonitor —
+  wired in Phase 5, ahead of this — targets), Loki + Promtail for logs,
+  Tempo for traces, and an OTel Collector that fans out OTLP to all
+  three. Real upstream charts as dependencies, not reinvented — the same
+  pattern deploy/helm/meeting-intel/Chart.yaml already uses for
+  Postgres/Redis/MinIO. Run `helm dependency build` (after `helm repo
+  add` for prometheus-community/grafana/open-telemetry — see
+  ../../helm/README.md's equivalent instructions) before installing.
+type: application
+version: 0.1.0
+dependencies:
+  - name: kube-prometheus-stack
+    version: "65.x.x"
+    repository: "https://prometheus-community.github.io/helm-charts"
+    condition: kube-prometheus-stack.enabled
+  - name: loki-stack
+    version: "2.x.x"
+    repository: "https://grafana.github.io/helm-charts"
+    condition: loki-stack.enabled
+  - name: tempo
+    version: "1.x.x"
+    repository: "https://grafana.github.io/helm-charts"
+    condition: tempo.enabled
+  - name: opentelemetry-collector
+    version: "0.x.x"
+    repository: "https://open-telemetry.github.io/opentelemetry-helm-charts"
+    condition: opentelemetry-collector.enabled

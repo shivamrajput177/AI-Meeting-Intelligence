@@ -1,0 +1,74 @@
+# Two steps in one Job pod: an initContainer runs pg_dump into a shared
+# emptyDir (the postgres:16-bookworm image has pg_dump built in, nothing
+# extra to install), then the main container (minio/mc — the official
+# MinIO client image) uploads that file to the MinIO tenant and prunes
+# anything past retainCount. Kept as two containers rather than one
+# fat image with both pg_dump and mc installed, so each container image
+# stays exactly what it's named for.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+  namespace: {{ .Values.namespace }}
+spec:
+  schedule: {{ .Values.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: Never
+          volumes:
+            - name: dump
+              emptyDir: {}
+          initContainers:
+            - name: pg-dump
+              image: {{ .Values.image }}
+              env:
+                - name: PGPASSWORD
+                  value: {{ .Values.postgres.password | quote }}
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -e
+                  ts=$(date +%Y%m%d%H%M%S)
+                  pg_dump -h {{ .Values.postgres.host }} -p {{ .Values.postgres.port }} \
+                    -U {{ .Values.postgres.username }} -d {{ .Values.postgres.database }} \
+                    --format=custom --compress=9 -f /backup/meetingintel-$ts.dump
+                  echo "$ts" > /backup/TIMESTAMP
+                  echo "pg_dump wrote /backup/meetingintel-$ts.dump"
+              resources:
+                {{- toYaml .Values.resources | nindent 16 }}
+              volumeMounts:
+                - name: dump
+                  mountPath: /backup
+          containers:
+            - name: upload-and-prune
+              image: minio/mc:latest
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -e
+                  mc alias set backupminio http://{{ .Values.minio.endpoint }} \
+                    {{ .Values.minio.accessKey }} {{ .Values.minio.secretKey }}
+                  mc mb --ignore-existing backupminio/{{ .Values.minio.bucket }}
+                  ts=$(cat /backup/TIMESTAMP)
+                  mc cp /backup/meetingintel-$ts.dump backupminio/{{ .Values.minio.bucket }}/meetingintel-$ts.dump
+                  echo "uploaded meetingintel-$ts.dump"
+                  # Retention: keep only the newest retainCount dumps —
+                  # `mc ls` prints oldest-first by default here since
+                  # filenames sort chronologically; keep the tail (newest)
+                  # and delete everything older.
+                  mc ls backupminio/{{ .Values.minio.bucket }} \
+                    | awk '{print $NF}' | sort | head -n -{{ .Values.retainCount }} \
+                    | while read -r f; do
+                        [ -n "$f" ] && mc rm "backupminio/{{ .Values.minio.bucket }}/$f"
+                      done
+              resources:
+                {{- toYaml .Values.resources | nindent 16 }}
+              volumeMounts:
+                - name: dump
+                  mountPath: /backup

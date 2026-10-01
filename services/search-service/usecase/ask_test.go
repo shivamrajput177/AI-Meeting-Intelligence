@@ -17,7 +17,7 @@ func TestAskUseCase_Ask(t *testing.T) {
 	answerer := &fakeAnswerer{answer: "The team shipped on Friday."}
 
 	search := usecase.NewSearchUseCase(embedder, repo, meetingsClient)
-	uc := usecase.NewAskUseCase(search, answerer, repo)
+	uc := usecase.NewAskUseCase(search, answerer, repo, "qwen2.5:7b")
 
 	result, err := uc.Ask(context.Background(), "org-1", "user-1", "when did we ship")
 	if err != nil {

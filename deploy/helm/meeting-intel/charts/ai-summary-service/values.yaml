@@ -52,6 +52,7 @@ networkPolicy:
 config:
   port: '8080'
   log_level: info
+  otel_collector_endpoint: observability-opentelemetry-collector.observability.svc.cluster.local:4318
   transcription_service_url: http://transcription-service:8080
   ollama_url: http://ollama.meeting-intel-ai.svc.cluster.local:11434
   ollama_model: qwen2.5:7b

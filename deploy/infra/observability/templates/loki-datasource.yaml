@@ -1,0 +1,43 @@
+# kube-prometheus-stack's bundled Grafana auto-registers Prometheus as a
+# datasource on its own; Loki comes from the separate loki-stack
+# dependency, so it needs its own datasource ConfigMap — same
+# grafana_datasource sidecar label mechanism as dashboards.yaml's
+# grafana_dashboard one (both enabled via values.yaml's
+# kube-prometheus-stack.grafana.sidecar.* block).
+#
+# jsonData.derivedFields is the request_id -> correlated-signal link
+# called for in observability-security.md §1 ("Grafana 'Explore'
+# correlates a log line's request_id ... directly to its Tempo trace via
+# a derived field link"). shared/logger's own logfmt lines always carry
+# request_id (see e.g. shared/middleware's AccessLog), so the Loki side of
+# this works today; the Tempo trace_id half depends on real OTel spans
+# existing to link to — see templates/otel-collector-config.yaml's own
+# note on that boundary. Left in as a real, working config even though
+# only half its payoff (Loki log correlation by request_id — click a log
+# line, see every other log line from that same request) is usable until
+# then.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loki-datasource
+  namespace: observability
+  labels:
+    grafana_datasource: "1"
+data:
+  loki-datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Loki
+        type: loki
+        access: proxy
+        url: http://observability-loki-stack.observability.svc.cluster.local:3100
+        jsonData:
+          derivedFields:
+            # url here is Grafana's OWN interpolation syntax (a single
+            # ${...}, evaluated by Grafana when rendering the link, not by
+            # Helm or Kubernetes) — it's what actually makes the matched
+            # trace id become the Tempo query.
+            - datasourceUid: tempo
+              matcherRegex: "trace_id=(\\w+)"
+              name: TraceID
+              url: "${__value.raw}"

@@ -58,6 +58,7 @@ networkPolicy:
 config:
   port: '8080'
   log_level: info
+  otel_collector_endpoint: observability-opentelemetry-collector.observability.svc.cluster.local:4318
   meeting_service_url: http://meeting-service:8080
   action_item_service_url: http://action-item-service:8080
   ai_summary_service_url: http://ai-summary-service:8080

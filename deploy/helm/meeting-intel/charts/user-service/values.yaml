@@ -50,6 +50,7 @@ networkPolicy:
 config:
   port: '8080'
   log_level: info
+  otel_collector_endpoint: observability-opentelemetry-collector.observability.svc.cluster.local:4318
 secrets:
   database_url: postgres://postgres:postgres@meeting-intel-postgresql.meeting-intel-data.svc.cluster.local:5432/meetingintel
   internal_service_token: dev-internal-token

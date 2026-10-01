@@ -1,0 +1,18 @@
+apiVersion: v2
+name: backup
+description: >
+  Postgres backup for Phase 6's DR work
+  (docs/architecture/observability-security.md §5). Scope, stated plainly:
+  this chart ships a periodic `pg_dump` CronJob uploading to the MinIO
+  tenant built in Phase 5, giving a real, working backup with an RPO
+  bounded by its own schedule (see values.yaml's schedule comment) — not
+  the continuous WAL archiving via pgBackRest the architecture doc
+  describes (~5min RPO). True continuous archiving needs pgBackRest's
+  binary present in the same container Postgres runs in (via
+  `archive_command`), which means either a custom Postgres image or
+  extending the bitnami/postgresql chart's own image — a real image-build
+  concern, not a Helm/config-authoring one, and not undertaken in this
+  pass. ../../../docs/runbooks/dr-restore.md names this gap in its own
+  RPO section rather than claiming the tighter number.
+type: application
+version: 0.1.0

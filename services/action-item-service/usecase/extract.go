@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/action-item-service/repository"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/action-item-service/summary"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/logger"
+	"github.com/shivamrajput177/ai-meeting-intelligence/shared/metrics"
 )
 
 type ExtractActionItemsUseCase struct {
@@ -22,6 +24,7 @@ type ExtractActionItemsUseCase struct {
 	repo               repository.Repository
 	publisher          events.Publisher
 	log                *logger.Logger
+	modelUsed          string
 }
 
 func NewExtractActionItemsUseCase(
@@ -31,10 +34,11 @@ func NewExtractActionItemsUseCase(
 	repo repository.Repository,
 	publisher events.Publisher,
 	log *logger.Logger,
+	modelUsed string,
 ) *ExtractActionItemsUseCase {
 	return &ExtractActionItemsUseCase{
 		summaryClient: summaryClient, participantsClient: participantsClient,
-		extractor: extractor, repo: repo, publisher: publisher, log: log,
+		extractor: extractor, repo: repo, publisher: publisher, log: log, modelUsed: modelUsed,
 	}
 }
 
@@ -62,10 +66,12 @@ func (uc *ExtractActionItemsUseCase) ExtractActionItems(ctx context.Context, org
 		return nil, fmt.Errorf("fetch participants: %w", err)
 	}
 
+	start := time.Now()
 	extracted, err := uc.extractor.ExtractActionItems(ctx, s.SummaryText)
 	if err != nil {
 		return nil, fmt.Errorf("ollama action-item extraction: %w", err)
 	}
+	metrics.LLMCallDurationSeconds.WithLabelValues(uc.modelUsed).Observe(time.Since(start).Seconds())
 
 	var items []*entity.ActionItem
 	for i := range extracted {
@@ -90,6 +96,7 @@ func (uc *ExtractActionItemsUseCase) ExtractActionItems(ctx context.Context, org
 	if err := uc.repo.ReplaceActionItems(ctx, orgID, meetingID, items); err != nil {
 		return nil, fmt.Errorf("store action items: %w", err)
 	}
+	metrics.ActionItemsExtractedTotal.Add(float64(len(items)))
 
 	if err := uc.publisher.PublishActionItemExtracted(ctx, entity.ActionItemExtractedEvent{
 		MeetingID: meetingID, OrgID: orgID, ItemCount: len(items),

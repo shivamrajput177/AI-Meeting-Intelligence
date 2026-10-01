@@ -1,0 +1,84 @@
+# The 5 alert rules named in observability-security.md §1. Thresholds are
+# this project's own reasonable starting points, not tuned against real
+# traffic (there isn't any — see README.md's Phase 6 status note); treat
+# them as a first draft to adjust once real alert noise/signal is
+# observed, the same honest stance this repo takes on KEDA's own
+# lagThreshold defaults (deploy/helm/meeting-intel/charts/*/values.yaml).
+#
+# Every double-curly-brace $labels.x / $value reference below (in
+# annotations only) is Prometheus/Alertmanager's OWN template syntax,
+# evaluated when an alert fires — not Helm's. Since this file still lives
+# under a Helm chart's templates/, Helm's own double-curly-brace parser
+# would otherwise try to evaluate $labels as one of ITS template
+# variables (undefined, since nothing in this chart ever sets it) and
+# fail to render at all — note this comment block itself carefully avoids
+# writing the literal delimiter for exactly that reason. The
+# {{"{{"}}/{{"}}"}} construct seen below is the standard escape: each one
+# is a tiny Helm template action whose only job is emitting the two
+# literal delimiter characters as plain text, so the end result
+# Kubernetes actually stores is the real, unescaped expression Prometheus
+# expects.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: meeting-intel-alerts
+  namespace: observability
+  labels:
+    app.kubernetes.io/part-of: meeting-intel
+spec:
+  groups:
+    - name: meeting-intel.rules
+      rules:
+        - alert: KafkaConsumerLagHigh
+          expr: kafka_consumergroup_lag > 1000
+          for: 5m
+          labels: { severity: warning }
+          annotations:
+            summary: "Consumer group {{"{{"}} $labels.consumergroup {{"}}"}} is backed up on {{"{{"}} $labels.topic {{"}}"}}"
+            description: "Lag has been over 1000 messages for 5m — the pipeline is falling behind faster than KEDA is scaling it out, or a consumer is stuck."
+
+        - alert: HTTPErrorRateHigh
+          expr: |
+            sum by (route) (rate(http_requests_total{status=~"5.."}[5m]))
+            /
+            sum by (route) (rate(http_requests_total[5m]))
+            > 0.05
+          for: 5m
+          labels: { severity: critical }
+          annotations:
+            summary: "{{"{{"}} $labels.route {{"}}"}} is returning 5xx for more than 5% of requests"
+            description: "Error rate over the last 5m has exceeded 5% on this route."
+
+        - alert: OllamaWhisperLatencyHigh
+          expr: |
+            histogram_quantile(0.99, sum(rate(llm_call_duration_seconds_bucket[5m])) by (le, model)) > 60
+            or
+            histogram_quantile(0.99, sum(rate(transcription_duration_seconds_bucket[5m])) by (le)) > 300
+          for: 5m
+          labels: { severity: warning }
+          annotations:
+            summary: "AI pipeline p99 latency breach"
+            description: "Ollama's p99 call time exceeded 60s, or whisper.cpp's p99 transcription time exceeded 5m, sustained for 5m — likely CPU contention on a laptop-sized model host (see kubernetes-cicd.md §1's budget table)."
+
+        - alert: NotificationDLQDepthNonZero
+          # "DLQ depth > 0" per observability-security.md §1 — this
+          # codebase has no literal dead-letter-queue topic (see
+          # notification-service's DispatchUseCase doc comments);
+          # notification_failed_total (incremented right where
+          # DispatchUseCase gives up and publishes notification.failed.v1)
+          # is the real terminal-failure signal the doc's row is actually
+          # about, so that's what this fires on.
+          expr: increase(notification_failed_total[10m]) > 0
+          for: 0m
+          labels: { severity: warning }
+          annotations:
+            summary: "{{"{{"}} $labels.channel {{"}}"}} notifications are permanently failing"
+            description: "At least one outbox row on the {{"{{"}} $labels.channel {{"}}"}} channel exhausted its retry budget in the last 10m."
+
+        - alert: PVCNearFull
+          expr: kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes > 0.8
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: "PVC {{"{{"}} $labels.persistentvolumeclaim {{"}}"}} is over 80% full"
+            description: "Postgres/MinIO/Ollama/whisper.cpp model storage — see kubernetes-cicd.md §1's persistence sizing. Sustained for 10m to avoid alerting on a transient spike."

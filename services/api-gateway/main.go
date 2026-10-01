@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/httpserver"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/logger"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/redisx"
+	"github.com/shivamrajput177/ai-meeting-intelligence/shared/tracing"
 )
 
 // serviceConfig is api-gateway's whole configuration surface — see
@@ -20,6 +22,7 @@ import (
 type serviceConfig struct {
 	Port                    string `json:"port"`
 	LogLevel                string `json:"log_level"`
+	OtelCollectorEndpoint   string `json:"otel_collector_endpoint"`
 	JWTSigningKey           string `json:"jwt_signing_key"`
 	RedisAddr               string `json:"redis_addr"`
 	AuthServiceURL          string `json:"auth_service_url"`
@@ -37,6 +40,12 @@ type serviceConfig struct {
 func main() {
 	cfg := loadConfig()
 	log := logger.New("api-gateway", logger.ParseLevel(cfg.LogLevel))
+	shutdownTracing, err := tracing.Init(context.Background(), "api-gateway", cfg.OtelCollectorEndpoint)
+	if err != nil {
+		log.Error("init tracing", "err", err)
+	} else {
+		defer func() { _ = shutdownTracing(context.Background()) }()
+	}
 
 	rdb := initRedis(cfg)
 	jwtSecret := []byte(cfg.JWTSigningKey)

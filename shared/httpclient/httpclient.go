@@ -20,6 +20,8 @@ import (
 	"net/http"
 	"time"
 
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/apperr"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/reqctx"
 )
@@ -38,7 +40,12 @@ func New(baseURL, internalToken string) *Client {
 	return &Client{
 		baseURL:       baseURL,
 		internalToken: internalToken,
-		hc:            &http.Client{Timeout: 5 * time.Second},
+		// otelhttp.NewTransport starts a span per outbound call and
+		// injects the current trace context as a W3C traceparent header —
+		// the other half of shared/httpserver's own otelhttp.NewHandler,
+		// which is what actually turns "service A calls service B" into
+		// one connected trace instead of two unrelated ones.
+		hc: &http.Client{Timeout: 5 * time.Second, Transport: otelhttp.NewTransport(http.DefaultTransport)},
 	}
 }
 

@@ -1,6 +1,7 @@
 {
   "port": "8000",
   "log_level": "info",
+  "otel_collector_endpoint": "",
   "jwt_signing_key": "dev-only-signing-key-change-me",
   "redis_addr": "localhost:6379",
   "auth_service_url": "http://localhost:8080",

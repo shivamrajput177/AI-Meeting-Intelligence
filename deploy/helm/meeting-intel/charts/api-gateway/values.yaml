@@ -60,6 +60,7 @@ networkPolicy:
 config:
   port: '8080'
   log_level: info
+  otel_collector_endpoint: observability-opentelemetry-collector.observability.svc.cluster.local:4318
   redis_addr: meeting-intel-redis-master.meeting-intel-data.svc.cluster.local:6379
   auth_service_url: http://auth-service:8080
   user_service_url: http://user-service:8080

@@ -9,6 +9,7 @@ import (
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/meeting-service/storage"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/apperr"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/logger"
+	"github.com/shivamrajput177/ai-meeting-intelligence/shared/metrics"
 )
 
 // UpdateStatusUseCase is shared by two callers with very different
@@ -43,6 +44,10 @@ func (uc *UpdateStatusUseCase) UpdateStatus(ctx context.Context, orgID, id, stat
 	meeting, err := uc.repo.GetByID(ctx, orgID, id)
 	if err != nil {
 		return nil, err
+	}
+
+	if status == entity.StatusCompleted {
+		metrics.MeetingsProcessedTotal.Inc()
 	}
 
 	if err := uc.publisher.PublishMeetingStatusChanged(ctx, entity.MeetingStatusChangedEvent{

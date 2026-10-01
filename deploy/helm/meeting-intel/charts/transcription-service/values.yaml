@@ -52,6 +52,7 @@ networkPolicy:
 config:
   port: '8080'
   log_level: info
+  otel_collector_endpoint: observability-opentelemetry-collector.observability.svc.cluster.local:4318
   minio_internal_endpoint: meeting-intel-minio-tenant-hl.meeting-intel-data.svc.cluster.local:9000
   minio_bucket: recordings
   minio_use_ssl: false

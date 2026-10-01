@@ -1,0 +1,33 @@
+namespace: meeting-intel-data
+
+# Hourly — a real, honest RPO bound (worst case: lose up to an hour of
+# writes), not the architecture doc's ~5min WAL-archiving target (see
+# Chart.yaml's own note on why that's not what's built here).
+schedule: "0 * * * *"
+
+image: postgres:16-bookworm # ships both pg_dump and nothing else needed — no separate mc/aws-cli image required, see job.yaml's own note
+resources:
+  requests: { cpu: 100m, memory: 128Mi }
+  limits: { cpu: 500m, memory: 512Mi }
+
+postgres:
+  host: meeting-intel-postgresql.meeting-intel-data.svc.cluster.local
+  port: 5432
+  database: meetingintel
+  # Same dev-safe default as every service chart's own secrets.database_url
+  # — see deploy/helm/README.md's note on overriding for anything real.
+  username: postgres
+  password: postgres
+
+minio:
+  endpoint: meeting-intel-minio-tenant-hl.meeting-intel-data.svc.cluster.local:9000
+  bucket: pg-backups
+  accessKey: minioadmin
+  secretKey: minioadmin123
+
+# How many hourly dumps to keep before the CronJob prunes older ones —
+# bounds MinIO usage without a lifecycle policy (MinIO does support
+# bucket lifecycle rules for this instead; keeping the retention logic in
+# the Job itself avoids requiring tenant-level lifecycle config this
+# chart doesn't otherwise touch).
+retainCount: 48

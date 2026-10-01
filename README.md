@@ -21,7 +21,7 @@ hand-written REST/JSON; there's no gRPC or protobuf codegen anywhere in
 this design (see `docs/architecture/microservices.md` §"Internal
 Communication" for why).
 
-## Status: Phase 1 (MVP) implemented, Phase 2 (2.1–2.7) fully implemented, Phase 3 (3.1–3.5) fully implemented, Phase 4 (4.1, 4.2, 4.4, 4.5 — 4.3 is an explicit, still-skipped stretch item) implemented, Phase 5 (5.1–5.5, Kubernetes/Helm/CI-CD/GitOps) authored and reviewed, not yet run against a live cluster — see Phase 5's own paragraph below for exactly what that split means
+## Status: Phase 1 (MVP) implemented, Phase 2 (2.1–2.7) fully implemented, Phase 3 (3.1–3.5) fully implemented, Phase 4 (4.1, 4.2, 4.4, 4.5 — 4.3 is an explicit, still-skipped stretch item) implemented, Phase 5 (5.1–5.5, Kubernetes/Helm/CI-CD/GitOps) and Phase 6 (observability, security hardening, DR, chaos, cost) authored and reviewed, not yet run against a live cluster — see Phase 5 and Phase 6's own paragraphs below for exactly what that split means
 
 Auth, User, Organization, and Meeting services, the API Gateway, and a
 React web app are built and running — signup, login, JWT refresh/rotation,
@@ -454,6 +454,93 @@ phase. **Phase 5 (Kind config, the umbrella + 11 per-service + 3 infra
 Helm charts, GitHub Actions CI/CD, ArgoCD GitOps) is authored, schema-validated,
 and reviewed** — see Phase 5's own paragraphs above for exactly what
 "not run against a live cluster" does and doesn't cover.
+
+Phase 6 adds the parts that make this "something a real team could
+operate on-call," per `docs/ROADMAP.md`'s own framing — and, unlike every
+phase before it, several of its own roadmap tasks are explicitly about
+*executing* something against a live cluster (a DR drill's measured RTO,
+a chaos test's observed self-heal, confirming the full stack actually
+fits a 16GB laptop), not just writing correct code. Those three are
+handled the same honest way as everything else in this project: real,
+runnable tooling, with their actual execution left undone and said so
+plainly, rather than fabricated results.
+
+**Observability** (`docs/architecture/observability-security.md` §1, all
+real, new code — not just config): `shared/metrics` replaces the old
+`Recorder`/`NoOp` placeholder with real Prometheus instrumentation —
+`/metrics` on every service (closing the gap Phase 5's own ServiceMonitors
+were wired ahead of), RED metrics via a new `shared/httpserver` middleware
+that resolves each request's matched route pattern (not its raw path, so
+path parameters never explode label cardinality), and 6 business metrics
+(`meetings_processed_total`, `transcription_duration_seconds`,
+`llm_call_duration_seconds{model}`, `action_items_extracted_total`,
+`rag_query_duration_seconds`, `notification_failed_total`) wired into the
+exact usecases that do that work, with unit tests proving the wiring
+(`shared/httpserver/httpserver_test.go`,
+`notification-service/usecase/dispatch_test.go`'s new assertion). Tracing
+is real `otelhttp` instrumentation on both inbound requests
+(`shared/httpserver`) and outbound internal calls
+(`shared/httpclient`) — exported via OTLP/HTTP, consistent with this
+project's own no-gRPC-anywhere rule — with the scope boundary stated
+directly in `shared/tracing`'s own package doc: Postgres driver spans
+(`otelpgx`) and manual Kafka span propagation aren't built, so a trace
+shows a request's HTTP legs across services, not the DB query or Kafka
+hop inside them. `deploy/infra/observability/` is a new chart bundling
+Prometheus+Grafana+Alertmanager (via `kube-prometheus-stack`, which also
+supplies the Prometheus Operator CRDs Phase 5's ServiceMonitors were
+written against), Loki+Promtail, Tempo, and an OTel Collector fanning out
+to all three — plus 4 real Grafana dashboards and a `PrometheusRule` with
+the 5 alert rules the architecture doc names (one of which,
+`NotificationDLQDepthNonZero`, needed a brand-new real metric —
+`notification_failed_total` — rather than a fake placeholder expression,
+once writing it honestly surfaced that no DLQ-depth signal existed yet).
+
+**Security hardening**: `trivy` in CI is now blocking (`ci.yaml`'s step
+was report-only through Phase 5); every service chart's `NetworkPolicy`
+is tightened from Phase 5's original wide-open "any port in this
+namespace" egress to the actual finite port set each namespace exposes —
+which surfaced a real bug while tightening it: Phase 5's NetworkPolicies
+only ever allowed *ingress* from the observability namespace (Prometheus
+scraping `/metrics`), never *egress* to it, so Phase 6's own OTel traces
+would have silently blackholed at the NetworkPolicy the moment the
+collector was deployed, caught and fixed in the same pass rather than
+shipped broken. `docs/SECURITY_CHECKLIST.md` goes through every item in
+the architecture doc's security section against what's actually built,
+including real divergences found while writing it and not previously
+documented — JWTs are signed HS256, not the RS256 the architecture doc
+specifies; rate limiting is narrower than documented (per-IP on
+`/auth/*` only, not the general per-(org_id, user_id) budget the doc also
+calls for); there's no systematic request validation or file-upload
+validation anywhere in this codebase. None of these are fixed in this
+pass — they're named, which is what the roadmap's own deliverable asks
+for ("every item checked or explicitly deferred with rationale").
+
+**DR, chaos, and cost** — the three execution-dependent tasks:
+`deploy/infra/backup/` is a real hourly `pg_dump`-to-MinIO `CronJob` (not
+the architecture doc's continuous-WAL-archiving-via-pgBackRest design,
+which needs a custom Postgres image to bundle pgBackRest's binary into an
+`archive_command` hook — a real image-build concern this pass doesn't
+take on, named in that chart's own `Chart.yaml`), and
+`docs/runbooks/dr-restore.md` is a genuinely actionable, copy-pasteable
+restore procedure against it — marked, in its own first paragraph, as
+written and not yet executed, with its RTO/RPO rows left as targets for
+whoever runs it for real to fill in. `scripts/chaos-test.sh` is a real
+`kubectl`-based script (kill a random Postgres/Kafka/MinIO pod or drain a
+Kind worker, wait for self-heal) with
+`docs/runbooks/chaos-test-findings.md` as the blank template for
+recording what an actual run shows — not run here, same reason as
+everything else. `docs/COST_RESOURCE_AUDIT.md` is the one task this pass
+could genuinely compute rather than just prepare: summing every chart's
+own committed `resources.requests/limits` × minimum replica count across
+all 34 pods at baseline scale gives **13.12Gi of memory requests, 22.25Gi
+of limits** — a real, reproducible arithmetic result (not a live
+measurement) showing the full stack does *not* comfortably fit a 16GB
+laptop once Kind's own overhead is added, with Ollama's 6Gi/8Gi alone the
+dominant line item, exactly matching the architecture doc's own
+"Ollama/whisper.cpp: the actual bottleneck on a laptop" claim — now with
+a number behind it. `docs/DESIGN_DECISIONS.md` and
+`docs/runbooks/incident-response.md` round out the roadmap's
+"interview-facing artifacts" deliverable.
 
 The backend is a **Go workspace** (`go.work` at the repo root): `shared/`
 is its own Go module with no `internal/` in its path, so every
@@ -1095,13 +1182,14 @@ work as usual.
 
 `web/` is a standalone Vite app: `cd web && npm install && npm run dev`.
 
-### Kubernetes (Phase 5)
+### Kubernetes, Observability & Production Readiness (Phases 5-6)
 
 The whole platform also runs on Kubernetes instead of `docker compose` —
 Kind locally, Helm for packaging, GitHub Actions + ArgoCD for CI/CD and
-GitOps. See [`deploy/helm/README.md`](deploy/helm/README.md) for the full
-setup (`kind create cluster`, `helm dependency build`, `helm install`) and
-the Status section's own Phase 5 paragraphs above for exactly what's been
+GitOps, plus Phase 6's full observability/security/DR layer on top. See
+[`deploy/helm/README.md`](deploy/helm/README.md) for the full setup
+(`kind create cluster`, `helm dependency build`, `helm install`) and the
+Status section's own Phase 5/6 paragraphs above for exactly what's been
 schema-validated (every chart, via `helm lint`/`helm template` +
 `kubeconform` against real Kubernetes/Strimzi/KEDA/Prometheus/ArgoCD
 schemas) versus not yet run against a live cluster in this repo's own
@@ -1112,5 +1200,12 @@ development sandbox. Quick map of what's where:
 | `deploy/kind/kind-config.yaml` | 1 control-plane + 2 worker Kind cluster |
 | `deploy/helm/meeting-intel/` | Umbrella chart — 11 service subcharts + Postgres/Redis/MinIO as dependencies |
 | `deploy/infra/{strimzi-kafka,ollama,whisper-cpp}/` | The 3 pieces with no off-the-shelf chart to depend on |
-| `.github/workflows/{ci.yaml,security.yaml}` | Per-service build/test/scan/push, weekly vuln scan |
+| `deploy/infra/observability/` | Prometheus+Grafana+Alertmanager, Loki+Promtail, Tempo, OTel Collector — Phase 6 |
+| `deploy/infra/backup/` | Hourly `pg_dump`-to-MinIO `CronJob` — Phase 6 |
+| `.github/workflows/{ci.yaml,security.yaml}` | Per-service build/test/scan/push (now blocking on `trivy`), weekly vuln scan |
 | `deploy/argocd/` | AppProject, infra Applications (sync-wave -1/0), the app ApplicationSet (sync-wave 2), SOPS+age secrets flow |
+| `docs/SECURITY_CHECKLIST.md` | Every security item checked or deferred, Phase 6 |
+| `docs/DESIGN_DECISIONS.md` | Trade-offs worth defending in an interview, Phase 6 |
+| `docs/COST_RESOURCE_AUDIT.md` | Computed laptop-fit audit (13.12Gi req / 22.25Gi lim), Phase 6 |
+| `docs/runbooks/{dr-restore,chaos-test-findings,incident-response}.md` | Written, not yet executed — Phase 6 |
+| `scripts/chaos-test.sh` | Real, runnable chaos test tool — Phase 6 |

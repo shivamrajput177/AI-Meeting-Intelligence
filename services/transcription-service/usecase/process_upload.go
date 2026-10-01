@@ -14,6 +14,7 @@ import (
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/transcription-service/repository"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/transcription-service/storage"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/logger"
+	"github.com/shivamrajput177/ai-meeting-intelligence/shared/metrics"
 )
 
 // modelName is a dev-only fixed value — whisper.cpp loads one model per
@@ -49,10 +50,12 @@ func (uc *ProcessUploadUseCase) ProcessUpload(ctx context.Context, in entity.Mee
 	}
 	defer func() { _ = object.Close() }()
 
+	start := time.Now()
 	result, err := uc.transcriber.Transcribe(ctx, object, in.RecordingObjectKey)
 	if err != nil {
 		return nil, fmt.Errorf("whisper.cpp transcription: %w", err)
 	}
+	metrics.TranscriptionDurationSeconds.Observe(time.Since(start).Seconds())
 
 	transcript := &entity.Transcript{
 		ID:        uuid.NewString(),

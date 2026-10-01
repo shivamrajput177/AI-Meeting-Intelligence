@@ -56,8 +56,12 @@ func (r *statusRecorder) WriteHeader(status int) {
 
 // AccessLog emits one log line per request — method, path, status,
 // duration, request id — the minimum RED-metric-adjacent information to
-// debug anything in Phase 1 before Prometheus/Grafana exist (that's
-// Phase 6 — see shared/metrics for the placeholder that grows into that).
+// debug anything before Prometheus/Grafana existed in this codebase
+// (Phase 6 added real ones — see shared/metrics and
+// shared/httpserver.New's own metrics middleware). This log line is still
+// worth keeping even now: it's per-request, with the raw URL path rather
+// than the pattern httpRequestsTotal's route label uses, which is exactly
+// the detail a metric's low-cardinality label can't carry.
 func AccessLog(log *logger.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()

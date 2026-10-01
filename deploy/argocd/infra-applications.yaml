@@ -5,7 +5,12 @@
 # harder to read). Two sync-waves per
 # docs/architecture/kubernetes-cicd.md §4:
 #
-#   -1  operator CRDs + controllers (Strimzi, MinIO Operator) — must be
+#   -1  operator CRDs + controllers (Strimzi, MinIO Operator, and — added
+#       in Phase 6 — kube-prometheus-stack, which is both at once: it
+#       installs the Prometheus Operator's CRDs (ServiceMonitor,
+#       PrometheusRule) every service chart's own templates/servicemonitor.yaml
+#       already references, going all the way back to Phase 5, AND the
+#       Prometheus/Alertmanager/Grafana instances themselves) — must be
 #       Healthy before anything that creates their custom resources syncs
 #   0   the stateful infra those operators (and the two Bitnami charts)
 #       manage — must be Healthy before the application services in
@@ -209,6 +214,54 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: meeting-intel-ai
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: observability
+  namespace: argocd
+  annotations:
+    # -1, not 0 — see this file's own top comment: the Prometheus Operator
+    # CRDs this chart installs must exist before the app services'
+    # ServiceMonitors (sync-wave 2) can even be valid Kubernetes objects.
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: meeting-intel
+  source:
+    repoURL: https://github.com/shivamrajput177/AI-Meeting-Intelligence
+    targetRevision: main
+    path: deploy/infra/observability
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: postgres-backup
+  namespace: argocd
+  annotations:
+    # Same wave as postgresql/minio-tenant — it's just a CronJob
+    # definition syncing here, not a backup actually running yet, so
+    # there's no real ordering hazard even if it lands slightly before
+    # either is Healthy. See deploy/infra/backup/Chart.yaml for the honest
+    # scope line (hourly pg_dump, not pgBackRest's continuous WAL archiving).
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: meeting-intel
+  source:
+    repoURL: https://github.com/shivamrajput177/AI-Meeting-Intelligence
+    targetRevision: main
+    path: deploy/infra/backup
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: meeting-intel-data
   syncPolicy:
     automated: { prune: true, selfHeal: true }
     syncOptions: [CreateNamespace=true]

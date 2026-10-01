@@ -49,12 +49,36 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: meeting-intel
+      ports:
+        - port: 8080
+          protocol: TCP
     - to:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: meeting-intel-data
+      ports:
+        - port: 5432
+          protocol: TCP
+        - port: 9092
+          protocol: TCP
+        - port: 6379
+          protocol: TCP
+        - port: 9000
+          protocol: TCP
     - to:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: meeting-intel-ai
+      ports:
+        - port: 11434
+          protocol: TCP
+        - port: 8080
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - port: 4318
+          protocol: TCP
 {{- end }}

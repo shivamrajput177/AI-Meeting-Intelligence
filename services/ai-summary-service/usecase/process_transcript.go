@@ -13,6 +13,7 @@ import (
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/ai-summary-service/repository"
 	"github.com/shivamrajput177/ai-meeting-intelligence/services/ai-summary-service/transcript"
 	"github.com/shivamrajput177/ai-meeting-intelligence/shared/logger"
+	"github.com/shivamrajput177/ai-meeting-intelligence/shared/metrics"
 )
 
 type ProcessTranscriptUseCase struct {
@@ -69,10 +70,12 @@ func (uc *ProcessTranscriptUseCase) ProcessTranscript(ctx context.Context, orgID
 		return nil, fmt.Errorf("store chunks: %w", err)
 	}
 
+	start := time.Now()
 	result, err := uc.summarizer.Summarize(ctx, t.RawText)
 	if err != nil {
 		return nil, fmt.Errorf("ollama summarization: %w", err)
 	}
+	metrics.LLMCallDurationSeconds.WithLabelValues(uc.modelUsed).Observe(time.Since(start).Seconds())
 
 	summary := &entity.Summary{
 		ID: uuid.NewString(), MeetingID: meetingID, OrgID: orgID,
