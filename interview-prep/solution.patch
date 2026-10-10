@@ -1,0 +1,512 @@
+diff --git a/cmd/linkcheck/main.go b/cmd/linkcheck/main.go
+index 59bd9ca..851b946 100644
+--- a/cmd/linkcheck/main.go
++++ b/cmd/linkcheck/main.go
+@@ -14,7 +14,6 @@ import (
+ 	"net/http"
+ 	"os"
+ 	"os/signal"
+-	"sort"
+ 	"syscall"
+ 	"time"
+ 
+@@ -76,25 +75,20 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+ 		checker.WithLogger(logger),
+ 	)
+ 
+-	results, err := c.CheckAll(ctx, urls)
+-	if err != nil {
+-		fmt.Fprintf(stderr, "linkcheck: %v\n", err)
+-	}
+-
+-	// Results come back in completion order, sort them so the output is stable.
+-	sort.Slice(results, func(i, j int) bool {
+-		return results[i].URL < results[j].URL
+-	})
++	results, checkErr := c.CheckAll(ctx, urls)
+ 
+-	if _, err := report.Write(stdout, results); err != nil {
++	summary, err := report.Write(stdout, results)
++	if err != nil {
+ 		fmt.Fprintf(stderr, "linkcheck: %v\n", err)
+ 		return exitError
+ 	}
++	fmt.Fprintf(stdout, "\n%d links checked, %d broken\n", summary.Total, summary.Broken)
+ 
+-	checked, broken := c.Stats()
+-	fmt.Fprintf(stdout, "\n%d links checked, %d broken\n", checked, broken)
+-
+-	if broken > 0 {
++	if checkErr != nil {
++		fmt.Fprintf(stderr, "linkcheck: %v\n", checkErr)
++		return exitBroken
++	}
++	if summary.Broken > 0 {
+ 		return exitBroken
+ 	}
+ 
+diff --git a/internal/checker/checker.go b/internal/checker/checker.go
+index 7510238..c68f013 100644
+--- a/internal/checker/checker.go
++++ b/internal/checker/checker.go
+@@ -56,7 +56,8 @@ func WithUserAgent(userAgent string) Option {
+ 	}
+ }
+ 
+-// WithConcurrency sets how many links are checked at the same time.
++// WithConcurrency sets how many links are checked at the same time. Values
++// lower than 1 are treated as 1.
+ func WithConcurrency(n int) Option {
+ 	return func(c *Checker) {
+ 		c.concurrency = n
+@@ -92,10 +93,8 @@ type Checker struct {
+ 	concurrency int
+ 	failFast    bool
+ 	maxRetries  int
++	backoff     time.Duration
+ 	logger      *slog.Logger
+-
+-	checked int
+-	broken  int
+ }
+ 
+ // New returns a Checker configured with opts.
+@@ -105,15 +104,37 @@ func New(opts ...Option) *Checker {
+ 		userAgent:   defaultUserAgent,
+ 		concurrency: defaultConcurrency,
+ 		maxRetries:  defaultMaxRetries,
++		backoff:     baseBackoff,
+ 		logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+ 	}
+ 	for _, opt := range opts {
+ 		opt(c)
+ 	}
++	// Zero workers would make CheckAll return no results, and every link
++	// would silently pass.
++	c.concurrency = max(c.concurrency, 1)
++	c.maxRetries = max(c.maxRetries, 0)
+ 
+ 	return c
+ }
+ 
++// BrokenLinkError is returned by CheckAll in fail fast mode.
++type BrokenLinkError struct {
++	Result Result
++}
++
++func (e *BrokenLinkError) Error() string {
++	if e.Result.Err != nil {
++		return fmt.Sprintf("broken link %s: %v", e.Result.URL, e.Result.Err)
++	}
++
++	return fmt.Sprintf("broken link %s: status %d", e.Result.URL, e.Result.StatusCode)
++}
++
++func (e *BrokenLinkError) Unwrap() error {
++	return e.Result.Err
++}
++
+ // Check checks a single URL. It issues a HEAD request first and falls back to
+ // GET for servers that don't support HEAD. Transient failures are retried
+ // with exponential backoff.
+@@ -127,27 +148,22 @@ func (c *Checker) Check(ctx context.Context, url string) Result {
+ 		if err == nil && status == http.StatusMethodNotAllowed {
+ 			status, err = c.do(ctx, http.MethodGet, url)
+ 		}
+-		if !retryable(status) {
++		if !retryable(status) || attempt == c.maxRetries {
+ 			break
+ 		}
+ 
+ 		c.logger.Debug("retrying link", "url", url, "status", status, "attempt", attempt)
+-		time.Sleep(baseBackoff << attempt)
++		if err = sleep(ctx, c.backoff<<attempt); err != nil {
++			break
++		}
+ 	}
+ 
+-	res := Result{
++	return Result{
+ 		URL:        url,
+ 		StatusCode: status,
+ 		Duration:   time.Since(start),
+ 		Err:        err,
+ 	}
+-
+-	c.checked++
+-	if !res.OK() {
+-		c.broken++
+-	}
+-
+-	return res
+ }
+ 
+ // CheckAll checks every URL and returns one Result per URL, in the same order
+@@ -157,57 +173,56 @@ func (c *Checker) Check(ctx context.Context, url string) Result {
+ // Links are checked concurrently by a pool of workers. With fail fast enabled,
+ // CheckAll returns as soon as the first broken link is found.
+ func (c *Checker) CheckAll(ctx context.Context, urls []string) ([]Result, error) {
+-	jobs := make(chan string)
+-	results := make(chan Result)
+-	errs := make(chan error)
+-
+-	var wg sync.WaitGroup
+-	for i := 0; i < c.concurrency; i++ {
++	ctx, cancel := context.WithCancel(ctx)
++	defer cancel()
++
++	// Each worker writes to its own index, so results needs no locking and
++	// keeps the order of urls.
++	results := make([]Result, len(urls))
++	jobs := make(chan int)
++
++	var (
++		wg       sync.WaitGroup
++		failOnce sync.Once
++		failErr  error
++	)
++	for w := 0; w < min(c.concurrency, len(urls)); w++ {
+ 		wg.Add(1)
+-		go func() {
++		go func(worker int) {
+ 			defer wg.Done()
+ 
+-			c.logger.Debug("worker started", "worker", i)
+-			for url := range jobs {
+-				res := c.Check(ctx, url)
+-				if c.failFast && !res.OK() {
+-					errs <- fmt.Errorf("broken link %s: %v", url, res.Err)
+-					return
++			c.logger.Debug("worker started", "worker", worker)
++			for i := range jobs {
++				results[i] = c.Check(ctx, urls[i])
++				if c.failFast && !results[i].OK() {
++					failOnce.Do(func() {
++						failErr = &BrokenLinkError{Result: results[i]}
++						cancel()
++					})
+ 				}
+-				results <- res
+ 			}
+-		}()
++		}(w)
+ 	}
+ 
+-	go func() {
+-		for _, url := range urls {
+-			jobs <- url
++feed:
++	for i := range urls {
++		select {
++		case jobs <- i:
++		case <-ctx.Done():
++			break feed
+ 		}
+-		close(jobs)
+-	}()
+-
+-	go func() {
+-		wg.Wait()
+-		close(results)
+-	}()
++	}
++	close(jobs)
++	wg.Wait()
+ 
+-	var all []Result
+-	for {
+-		select {
+-		case res, ok := <-results:
+-			if !ok {
+-				return all, nil
+-			}
+-			all = append(all, res)
+-		case err := <-errs:
+-			return all, err
++	// Links that were never handed to a worker report why they were skipped.
++	for i := range results {
++		if results[i].URL == "" {
++			results[i] = Result{URL: urls[i], Err: ctx.Err()}
+ 		}
+ 	}
+-}
+ 
+-// Stats returns how many links were checked and how many of them were broken.
+-func (c *Checker) Stats() (checked, broken int) {
+-	return c.checked, c.broken
++	return results, failErr
+ }
+ 
+ func (c *Checker) do(ctx context.Context, method, url string) (int, error) {
+@@ -228,6 +243,19 @@ func (c *Checker) do(ctx context.Context, method, url string) (int, error) {
+ 	return resp.StatusCode, nil
+ }
+ 
++// sleep pauses for d, or until ctx is done.
++func sleep(ctx context.Context, d time.Duration) error {
++	timer := time.NewTimer(d)
++	defer timer.Stop()
++
++	select {
++	case <-ctx.Done():
++		return ctx.Err()
++	case <-timer.C:
++		return nil
++	}
++}
++
+ func retryable(status int) bool {
+ 	return status == http.StatusTooManyRequests || status >= 500
+ }
+diff --git a/internal/checker/checker_test.go b/internal/checker/checker_test.go
+index a93f6da..ce751cf 100644
+--- a/internal/checker/checker_test.go
++++ b/internal/checker/checker_test.go
+@@ -6,7 +6,7 @@ import (
+ 	"fmt"
+ 	"net/http"
+ 	"net/http/httptest"
+-	"sort"
++	"sync/atomic"
+ 	"testing"
+ 	"time"
+ )
+@@ -95,6 +95,47 @@ func TestCheck_ConnectionError(t *testing.T) {
+ 	}
+ }
+ 
++func TestCheck_RetriesTransientErrors(t *testing.T) {
++	var calls atomic.Int32
++	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		if calls.Add(1) < 3 {
++			w.WriteHeader(http.StatusServiceUnavailable)
++		}
++	}))
++	defer srv.Close()
++
++	c := New()
++	c.backoff = time.Millisecond
++
++	got := c.Check(context.Background(), srv.URL)
++
++	if !got.OK() {
++		t.Errorf("Check() OK = false, want true (status %d)", got.StatusCode)
++	}
++	if n := calls.Load(); n != 3 {
++		t.Errorf("server got %d calls, want 3", n)
++	}
++}
++
++func TestCheck_StopsRetryingWhenContextIsDone(t *testing.T) {
++	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		w.WriteHeader(http.StatusServiceUnavailable)
++	}))
++	defer srv.Close()
++
++	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
++	defer cancel()
++
++	c := New(WithMaxRetries(5))
++	c.backoff = time.Hour
++
++	got := c.Check(ctx, srv.URL)
++
++	if !errors.Is(got.Err, context.DeadlineExceeded) {
++		t.Errorf("Check() error = %v, want %v", got.Err, context.DeadlineExceeded)
++	}
++}
++
+ func TestCheckAll_PreservesOrder(t *testing.T) {
+ 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+ 		if r.URL.Path == "/missing" {
+@@ -113,20 +154,13 @@ func TestCheckAll_PreservesOrder(t *testing.T) {
+ 	if len(results) != len(urls) {
+ 		t.Fatalf("CheckAll() returned %d results, want %d", len(results), len(urls))
+ 	}
+-
+-	// Results are returned as soon as they're ready, so sort before comparing.
+-	sort.Strings(urls)
+-	sort.Slice(results, func(i, j int) bool {
+-		return results[i].URL < results[j].URL
+-	})
+-
+ 	for i, res := range results {
+ 		if res.URL != urls[i] {
+ 			t.Errorf("results[%d].URL = %q, want %q", i, res.URL, urls[i])
+ 		}
+ 	}
+-	if results[3].StatusCode != http.StatusNotFound {
+-		t.Errorf("results[3].StatusCode = %d, want %d", results[3].StatusCode, http.StatusNotFound)
++	if results[1].StatusCode != http.StatusNotFound {
++		t.Errorf("results[1].StatusCode = %d, want %d", results[1].StatusCode, http.StatusNotFound)
+ 	}
+ }
+ 
+@@ -137,8 +171,15 @@ func TestCheckAll_ContextCancelled(t *testing.T) {
+ 	ctx, cancel := context.WithCancel(context.Background())
+ 	cancel()
+ 
+-	results, _ := New().CheckAll(ctx, []string{srv.URL + "/a", srv.URL + "/b"})
++	urls := []string{srv.URL + "/a", srv.URL + "/b"}
++	results, err := New().CheckAll(ctx, urls)
++	if err != nil {
++		t.Fatalf("CheckAll() error = %v", err)
++	}
+ 
++	if len(results) != len(urls) {
++		t.Fatalf("CheckAll() returned %d results, want %d", len(results), len(urls))
++	}
+ 	for i, res := range results {
+ 		if !errors.Is(res.Err, context.Canceled) {
+ 			t.Errorf("results[%d].Err = %v, want %v", i, res.Err, context.Canceled)
+@@ -146,89 +187,100 @@ func TestCheckAll_ContextCancelled(t *testing.T) {
+ 	}
+ }
+ 
+-func TestCheck_RetriesTransientErrors(t *testing.T) {
+-	calls := 0
+-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+-		calls++
+-		if calls < 3 {
+-			w.WriteHeader(http.StatusServiceUnavailable)
+-			return
+-		}
+-	}))
+-	defer srv.Close()
+-
+-	got := New().Check(context.Background(), srv.URL)
+-
+-	if !got.OK() {
+-		t.Errorf("Check() OK = false, want true (status %d)", got.StatusCode)
+-	}
+-	if calls != 3 {
+-		t.Errorf("server got %d calls, want 3", calls)
+-	}
+-}
++func TestCheckAll_RespectsConcurrencyLimit(t *testing.T) {
++	const limit = 3
+ 
+-func TestCheckAll_Concurrent(t *testing.T) {
++	var inFlight, maxInFlight atomic.Int32
+ 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+-		if r.Header.Get("User-Agent") != defaultUserAgent {
+-			t.Fatalf("unexpected User-Agent %q", r.Header.Get("User-Agent"))
++		n := inFlight.Add(1)
++		defer inFlight.Add(-1)
++
++		for {
++			current := maxInFlight.Load()
++			if n <= current || maxInFlight.CompareAndSwap(current, n) {
++				break
++			}
+ 		}
+-		time.Sleep(100 * time.Millisecond)
++		time.Sleep(20 * time.Millisecond)
+ 	}))
+ 	defer srv.Close()
+ 
+ 	var urls []string
+-	for i := 0; i < 20; i++ {
++	for i := 0; i < 12; i++ {
+ 		urls = append(urls, fmt.Sprintf("%s/%d", srv.URL, i))
+ 	}
+ 
+-	start := time.Now()
+-	results, err := New(WithConcurrency(10)).CheckAll(context.Background(), urls)
+-	elapsed := time.Since(start)
+-
++	results, err := New(WithConcurrency(limit)).CheckAll(context.Background(), urls)
+ 	if err != nil {
+ 		t.Fatalf("CheckAll() error = %v", err)
+ 	}
++
+ 	if len(results) != len(urls) {
+ 		t.Fatalf("CheckAll() returned %d results, want %d", len(results), len(urls))
+ 	}
+-	if elapsed > 300*time.Millisecond {
+-		t.Errorf("CheckAll() took %s, expected links to be checked concurrently", elapsed)
++	if got := maxInFlight.Load(); got < 2 || got > limit {
++		t.Errorf("max in-flight requests = %d, want between 2 and %d", got, limit)
+ 	}
+ }
+ 
+-func TestCheckAll_FailFast(t *testing.T) {
+-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+-		if r.URL.Path == "/broken" {
+-			w.WriteHeader(http.StatusNotFound)
+-		}
+-	}))
++func TestCheckAll_InvalidConcurrency(t *testing.T) {
++	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+ 	defer srv.Close()
+ 
+-	urls := []string{srv.URL + "/a", srv.URL + "/broken", srv.URL + "/b", srv.URL + "/c"}
+-
+-	_, err := New(WithFailFast(true)).CheckAll(context.Background(), urls)
++	for _, n := range []int{0, -1} {
++		t.Run(fmt.Sprint(n), func(t *testing.T) {
++			results, err := New(WithConcurrency(n)).CheckAll(context.Background(), []string{srv.URL})
++			if err != nil {
++				t.Fatalf("CheckAll() error = %v", err)
++			}
++			if len(results) != 1 || !results[0].OK() {
++				t.Errorf("CheckAll() = %+v, want one healthy result", results)
++			}
++		})
++	}
++}
+ 
+-	if err == nil {
+-		t.Fatal("CheckAll() expected an error")
++func TestCheckAll_NoURLs(t *testing.T) {
++	results, err := New().CheckAll(context.Background(), nil)
++	if err != nil {
++		t.Fatalf("CheckAll() error = %v", err)
++	}
++	if len(results) != 0 {
++		t.Errorf("CheckAll() returned %d results, want 0", len(results))
+ 	}
+ }
+ 
+-func TestStats(t *testing.T) {
++func TestCheckAll_FailFast(t *testing.T) {
++	var calls atomic.Int32
+ 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		calls.Add(1)
+ 		if r.URL.Path == "/broken" {
+ 			w.WriteHeader(http.StatusNotFound)
+ 		}
+ 	}))
+ 	defer srv.Close()
+ 
+-	c := New(WithConcurrency(4))
+-	urls := []string{srv.URL + "/a", srv.URL + "/broken", srv.URL + "/b", srv.URL + "/c"}
+-	if _, err := c.CheckAll(context.Background(), urls); err != nil {
+-		t.Fatalf("CheckAll() error = %v", err)
++	urls := []string{srv.URL + "/broken"}
++	for i := 0; i < 50; i++ {
++		urls = append(urls, fmt.Sprintf("%s/%d", srv.URL, i))
+ 	}
+ 
+-	checked, broken := c.Stats()
+-	if checked != 4 || broken != 1 {
+-		t.Errorf("Stats() = (%d, %d), want (4, 1)", checked, broken)
++	results, err := New(WithFailFast(true), WithConcurrency(1)).CheckAll(context.Background(), urls)
++
++	var brokenErr *BrokenLinkError
++	if !errors.As(err, &brokenErr) {
++		t.Fatalf("CheckAll() error = %v, want a *BrokenLinkError", err)
++	}
++	if brokenErr.Result.URL != srv.URL+"/broken" {
++		t.Errorf("BrokenLinkError URL = %q, want %q", brokenErr.Result.URL, srv.URL+"/broken")
++	}
++	if len(results) != len(urls) {
++		t.Fatalf("CheckAll() returned %d results, want %d", len(results), len(urls))
++	}
++	if n := calls.Load(); n > 2 {
++		t.Errorf("server got %d calls, want CheckAll to stop after the broken link", n)
++	}
++	if last := results[len(results)-1]; !errors.Is(last.Err, context.Canceled) {
++		t.Errorf("last result error = %v, want %v", last.Err, context.Canceled)
+ 	}
+ }
